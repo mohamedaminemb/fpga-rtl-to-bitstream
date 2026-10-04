@@ -1,0 +1,4 @@
+*.cf 
+*.vcd 
+*.o
+work-obj*.cf
