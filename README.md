@@ -25,6 +25,8 @@ fpga-rtl-to-bitstream/
 ├── constraints/  # Contraintes d'horloge et de broches (XDC/SDC) 
 └── docs/         # Documentation et rapports de timing/ressources
 
+```
+
 ## Exécuter la simulation
 
 Pour compiler et simuler le multiplexeur 2 vers 1 sous GHDL :
