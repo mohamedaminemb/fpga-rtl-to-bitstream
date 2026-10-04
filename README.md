@@ -31,15 +31,15 @@ fpga-rtl-to-bitstream/
 
 Pour compiler et simuler le multiplexeur 2 vers 1 sous GHDL :
 
-# 1. Analyse (Compilation syntaxique) 
+### 1. Analyse (Compilation syntaxique) 
 ghdl -a rtl/mux21.vhd 
 ghdl -a tb/tb_mux21.vhd 
 
-# 2. Élaboration 
+### 2. Élaboration 
 ghdl -e tb_mux21 
 
-# 3. Exécution et génération du fichier VCD 
+### 3. Exécution et génération du fichier VCD 
 ghdl -r tb_mux21 --vcd=mux21.vcd 
 
-# 4. Visualisation du chronogramme 
+### 4. Visualisation du chronogramme 
 gtkwave mux21.vcd
