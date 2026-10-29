@@ -1,0 +1,31 @@
+name: VHDL Simulation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Get repository sources
+        uses: actions/checkout@v6
+
+      - name: Install simulation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ghdl python3
+
+      - name: Show tool versions
+        run: |
+          ghdl --version
+          python3 --version
+
+      - name: Run VHDL regression
+        run: python3 scripts/run_tests.py
