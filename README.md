@@ -1,35 +1,37 @@
 # FPGA RTL to Bitstream
 
+[![VHDL Simulation](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml/badge.svg?branch=main)](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml)
+
 Conception de modules numériques en VHDL et construction progressive d’un flot FPGA, de la vérification RTL à la génération du bitstream.
 
-Le dépôt rassemble les modules RTL, leurs testbenches auto-vérifiants et un script Python permettant de rejouer les simulations avec une seule commande.
+Le dépôt rassemble les sources RTL, les testbenches auto-vérifiants et une régression Python exécutée localement et automatiquement avec GitHub Actions.
 
 ## État actuel
 
-Cinq modules RTL sont implémentés.
+Cinq modules RTL sont implémentés et vérifiés en simulation.
 
-| Module | Description | Vérifications |
-|---|---|---:|
-| `mux21` | Multiplexeur combinatoire 2 vers 1, sur un bit | 8 |
-| `adder_sub` | Additionneur/soustracteur combinatoire non signé | 4 |
-| `reg_en` | Registre avec reset synchrone et enable | 7 |
-| `counter_en` | Compteur avec reset synchrone et enable | 14 |
-| `clock_enable` | Générateur d’autorisation périodique | 16 |
-| **Total** | **5 testbenches** | **49** |
+| Module | Description | Configuration testée | Vérifications |
+|---|---|---|---:|
+| `mux21` | Multiplexeur combinatoire 2 vers 1 | Entrées binaires | 8 |
+| `adder_sub` | Additionneur/soustracteur non signé | `N = 8` | 4 |
+| `reg_en` | Registre avec reset synchrone et enable | `WIDTH = 8` | 7 |
+| `counter_en` | Compteur avec reset synchrone et enable | `WIDTH = 3` | 14 |
+| `clock_enable` | Générateur d’autorisation périodique | `DIVISOR = 4` | 16 |
+| **Total** | **5 testbenches** | | **49** |
 
-Les quatre premiers testbenches ont été validés ensemble par le script de régression. Le testbench de `clock_enable` a également réussi en simulation individuelle.
+La régression locale et la première exécution GitHub Actions ont réussi.
 
 La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
 ## Prérequis
 
-- **Python 3** pour le script de régression
-- **GHDL** avec prise en charge de VHDL-2008
-- **GTKWave**, facultatif, pour examiner les chronogrammes
+- Python 3
+- GHDL avec prise en charge de VHDL-2008
+- GTKWave, facultatif, pour visualiser les chronogrammes
+
+Le script de régression utilise uniquement la bibliothèque standard Python.
 
 Environnement de développement : Ubuntu 24.04 LTS, VS Code avec TerosHDL, Git et GitHub.
-
-Le script utilise uniquement la bibliothèque standard Python.
 
 Pour consulter les versions installées :
 
@@ -43,6 +45,9 @@ gtkwave --version
 
 ```text
 fpga-rtl-to-bitstream/
+├── .github/
+│   └── workflows/
+│       └── simulation.yml
 ├── .gitignore
 ├── README.md
 ├── rtl/
@@ -62,12 +67,13 @@ fpga-rtl-to-bitstream/
 ```
 
 - `rtl/` : descriptions matérielles destinées à la synthèse.
-- `tb/` : bancs de test utilisés pour la simulation.
-- `scripts/` : automatisation des simulations.
+- `tb/` : bancs de test de simulation.
+- `scripts/` : automatisation de la régression.
+- `.github/workflows/` : configuration de l’intégration continue.
 
 Les dossiers de contraintes et de documentation seront complétés au fil du développement.
 
-## Lancer la régression
+## Lancer tous les tests
 
 Depuis la racine du dépôt :
 
@@ -75,16 +81,11 @@ Depuis la racine du dépôt :
 python3 scripts/run_tests.py
 ```
 
-Pour chaque module, le script :
+Pour chaque module, le script analyse les sources, élabore le testbench et lance la simulation avec `--assert-level=error`.
 
-1. Analyse le fichier RTL et son testbench.
-2. Élabore le testbench.
-3. Exécute la simulation avec `--assert-level=error`.
-4. Affiche `PASS` si les commandes réussissent.
+Il s’arrête dès qu’une commande échoue et transmet son code de retour.
 
-Le script s’arrête au premier échec et transmet le code de retour de la commande concernée.
-
-Après réussite des cinq testbenches, le message attendu est :
+Résultat attendu après réussite des cinq testbenches :
 
 ```text
 All 5 testbenches passed.
@@ -96,26 +97,46 @@ Pour consulter le code de retour immédiatement après l’exécution :
 echo $?
 ```
 
-Un code `0` indique la réussite. Un code différent de zéro indique un échec.
+- `0` : régression réussie.
+- Autre valeur : échec.
 
-Le script doit être exécuté depuis la racine du dépôt. Il ne génère pas de fichiers VCD ; les simulations individuelles ci-dessous permettent de les produire.
+Le script doit être exécuté depuis la racine du dépôt. Il ne génère pas de traces VCD.
+
+## Intégration continue
+
+Le workflow **VHDL Simulation**, défini dans `.github/workflows/simulation.yml`, s’exécute :
+
+- À chaque push.
+- Lors des événements de pull request pris en charge par le déclencheur.
+- À la demande avec le bouton **Run workflow**.
+
+Il utilise une machine GitHub sous Ubuntu 24.04 et réalise les étapes suivantes :
+
+1. Récupération du dépôt.
+2. Installation de GHDL et Python 3.
+3. Affichage des versions des outils.
+4. Exécution de `python3 scripts/run_tests.py`.
+
+Le workflow possède un accès en lecture au contenu du dépôt et une limite d’exécution de 10 minutes.
+
+Une erreur de compilation, d’élaboration ou de simulation fait échouer le travail. Les résultats et les journaux sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
+
+La CI exécute les tests RTL ; elle ne réalise pas encore la synthèse ou la validation matérielle.
 
 ## Modules RTL
 
 ### Multiplexeur — `mux21`
 
-Le multiplexeur sélectionne une entrée selon `sel` :
+Circuit combinatoire sélectionnant une entrée selon `sel` :
 
 | `sel` | Sortie |
 |---|---|
 | `'0'` | `y = a` |
 | `'1'` | `y = b` |
 
-Le circuit est combinatoire.
+Le testbench vérifie les huit combinaisons binaires de `a`, `b` et `sel`.
 
-Le testbench vérifie les huit combinaisons binaires des entrées. La détection d’erreur a été contrôlée en modifiant temporairement un résultat attendu : une assertion a interrompu la simulation. Cette modification a ensuite été retirée.
-
-Les autres valeurs de `std_logic`, notamment `'X'` et `'U'`, ne sont pas testées.
+La détection d’erreur a été contrôlée en modifiant temporairement un résultat attendu : une assertion a interrompu la simulation. La valeur correcte a ensuite été rétablie.
 
 ### Additionneur/soustracteur — `adder_sub`
 
@@ -132,7 +153,7 @@ Les calculs utilisent `unsigned` et le paquet IEEE `numeric_std`. Le résultat e
 
 Quatre cas sont vérifiés sur 8 bits :
 
-| Opération | Résultat attendu |
+| Opération | Résultat |
 |---|---:|
 | `15 + 10` | 25 |
 | `25 - 10` | 15 |
@@ -151,9 +172,7 @@ Le registre mémorise une donnée de `WIDTH` bits au front montant de l’horlog
 
 Le reset est synchrone, actif à l’état haut et prioritaire sur l’enable.
 
-Le testbench applique un reset initial puis vérifie les chargements, le maintien entre les fronts, le maintien avec enable inactif, le caractère synchrone du reset et sa priorité.
-
-Les sept vérifications ont réussi sur une instance de 8 bits.
+Les sept vérifications portent sur le reset initial, deux chargements, le maintien entre les fronts, le maintien avec enable inactif, le caractère synchrone du reset et sa priorité.
 
 ### Compteur synchrone — `counter_en`
 
@@ -169,15 +188,15 @@ Le reset est synchrone, actif à l’état haut et prioritaire sur l’enable.
 
 Le comptage s’effectue modulo `2^WIDTH`. Une incrémentation après la valeur maximale ramène le compteur à zéro.
 
-Les 14 vérifications portent sur le reset initial, l’incrémentation, le maintien pendant deux cycles, le comptage jusqu’à la valeur maximale, le débordement, la reprise du comptage et le comportement du reset.
+Les 14 vérifications couvrent le reset initial, l’incrémentation, le maintien pendant deux cycles, le comptage jusqu’à 7, le débordement, la reprise du comptage et le comportement du reset.
 
-Elles ont réussi sur une instance de 3 bits. Le chronogramme a également été inspecté.
+Le chronogramme a également été inspecté pour confirmer le maintien, le débordement et le reset synchrone.
 
 ### Générateur de clock enable — `clock_enable`
 
-Le module produit une autorisation `tick` pendant un cycle, tous les `DIVISOR` cycles d’horloge. Le générique `DIVISOR` est strictement positif et vaut 4 par défaut.
+Le module produit une autorisation `tick` pendant un cycle, tous les `DIVISOR` cycles d’horloge.
 
-Le compteur interne évolue de `0` à `DIVISOR - 1` :
+Le générique `DIVISOR` est strictement positif et vaut 4 par défaut. Le compteur interne évolue de `0` à `DIVISOR - 1`.
 
 | Condition au front montant | Compteur suivant | `tick` suivant |
 |---|---|---|
@@ -187,9 +206,9 @@ Le compteur interne évolue de `0` à `DIVISOR - 1` :
 
 Le reset est synchrone et actif à l’état haut. Après sa désactivation, la première impulsion apparaît au `DIVISOR`-ième front montant.
 
-`tick` est destiné à être utilisé comme enable dans une logique cadencée par `clk`. Il ne constitue pas une nouvelle horloge.
+`tick` est destiné à être utilisé comme enable dans une logique cadencée par `clk`, et non comme une nouvelle horloge.
 
-Pour `DIVISOR = 4`, la séquence après reset est :
+Pour `DIVISOR = 4` :
 
 ```text
 Cycle :  1 2 3 4 5 6 7 8
@@ -198,18 +217,7 @@ tick  :  0 0 0 1 0 0 0 1
 
 Pour `DIVISOR = 1`, `tick` reste actif à chaque cycle hors reset.
 
-Le testbench réalise 16 vérifications avec `DIVISOR = 4` :
-
-| Scénario | Vérifications |
-|---|---:|
-| Reset initial | 1 |
-| Huit cycles hors reset | 8 |
-| Deux cycles supplémentaires avant le reset | 2 |
-| Reset au milieu d’une période | 1 |
-| Quatre cycles après redémarrage | 4 |
-| **Total** | **16** |
-
-Les 16 vérifications ont réussi. Le cas limite `DIVISOR = 1` n’a pas encore été vérifié en simulation.
+Les 16 vérifications portent sur le reset initial, la périodicité des impulsions et le redémarrage d’une période complète après un reset intermédiaire.
 
 ## Simulations individuelles
 
@@ -223,7 +231,7 @@ ghdl -e --std=08 tb_mux21
 ghdl -r --std=08 tb_mux21 --assert-level=error --vcd=mux21.vcd
 ```
 
-Message attendu : `MUX: all 8 binary cases passed.`
+Résultat attendu : `MUX: all 8 binary cases passed.`
 
 Fin de simulation : `80 ns`.
 
@@ -235,7 +243,7 @@ ghdl -e --std=08 tb_adder_sub
 ghdl -r --std=08 tb_adder_sub --assert-level=error --vcd=adder_sub.vcd
 ```
 
-Message attendu : `All tests passed.`
+Résultat attendu : `All tests passed.`
 
 Dernière vérification : `40 ns`.
 
@@ -247,7 +255,7 @@ ghdl -e --std=08 tb_reg_en
 ghdl -r --std=08 tb_reg_en --assert-level=error --vcd=reg_en.vcd
 ```
 
-Message attendu : `REG_EN: all 7 checks passed.`
+Résultat attendu : `REG_EN: all 7 checks passed.`
 
 Fin de simulation : `46 ns`.
 
@@ -259,7 +267,7 @@ ghdl -e --std=08 tb_counter_en
 ghdl -r --std=08 tb_counter_en --assert-level=error --vcd=counter_en.vcd
 ```
 
-Message attendu : `COUNTER_EN: all 14 checks passed.`
+Résultat attendu : `COUNTER_EN: all 14 checks passed.`
 
 Fin de simulation : `126 ns`.
 
@@ -271,7 +279,7 @@ ghdl -e --std=08 tb_clock_enable
 ghdl -r --std=08 tb_clock_enable --assert-level=error --vcd=clock_enable.vcd
 ```
 
-Message attendu : `CLOCK_ENABLE: all 16 checks passed.`
+Résultat attendu : `CLOCK_ENABLE: all 16 checks passed.`
 
 Fin de simulation : `156 ns`.
 
@@ -287,15 +295,9 @@ gtkwave counter_en.vcd
 gtkwave clock_enable.vcd
 ```
 
-Les chronogrammes permettent d’examiner les transitions des signaux. Les assertions assurent la comparaison automatique avec les résultats attendus.
+Les assertions comparent automatiquement les sorties aux valeurs attendues. Les chronogrammes permettent d’examiner les transitions des signaux.
 
-## Stratégie de vérification et limites
-
-Les testbenches utilisent des scénarios dirigés et des assertions.
-
-L’option `--assert-level=error` interrompt la simulation lorsqu’une assertion de niveau `error` ou supérieur échoue. Le script Python interrompt la régression lorsqu’une commande renvoie un code non nul.
-
-L’arrêt au premier échec a été contrôlé par injection temporaire d’un résultat attendu incorrect dans le testbench du multiplexeur. Après restauration, la régression des quatre premiers modules a réussi avec un code de retour égal à `0`.
+## Périmètre et limites de vérification
 
 | Module | Configuration testée | Limites principales |
 |---|---|---|
@@ -303,13 +305,15 @@ L’arrêt au premier échec a été contrôlé par injection temporaire d’un 
 | `adder_sub` | `N = 8` | Opérandes non exhaustifs ; autres largeurs non testées |
 | `reg_en` | `WIDTH = 8` | Autres largeurs non testées |
 | `counter_en` | `WIDTH = 3` | Autres largeurs non testées |
-| `clock_enable` | `DIVISOR = 4` | Autres diviseurs non testés |
+| `clock_enable` | `DIVISOR = 4` | Autres diviseurs, notamment 1, non testés |
 
-Les 49 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Leur réussite concerne les scénarios exécutés.
+Les 49 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Une régression réussie confirme les scénarios exécutés, sans prouver tous les comportements possibles des modules.
+
+L’arrêt au premier échec du script Python a été contrôlé par injection temporaire d’un résultat attendu incorrect dans le testbench du multiplexeur.
 
 ## Fichiers générés
 
-Les fichiers de travail GHDL et les traces de simulation sont générés localement et exclus du dépôt par `.gitignore`, notamment :
+Les fichiers de travail GHDL et les traces de simulation sont produits localement et exclus du dépôt par `.gitignore`, notamment :
 
 ```gitignore
 *.cf
@@ -327,6 +331,5 @@ Le dépôt conserve les sources RTL, les testbenches, les scripts et la document
 - FIFO synchrone et UART
 - Vérification structurée avec VUnit ou cocotb
 - Intégration d’un système pilotable par UART
-- Régression automatique avec GitHub Actions
 - Synthèse, contraintes et analyse de timing
 - Génération du bitstream et validation sur carte FPGA
