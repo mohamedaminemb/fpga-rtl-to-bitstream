@@ -8,7 +8,7 @@ Le dépôt rassemble les sources RTL, les testbenches auto-vérifiants et une r�
 
 ## État actuel
 
-Cinq modules RTL sont implémentés et vérifiés en simulation.
+Six modules RTL sont implémentés et vérifiés en simulation.
 
 | Module | Description | Configuration testée | Vérifications |
 |---|---|---|---:|
@@ -17,9 +17,10 @@ Cinq modules RTL sont implémentés et vérifiés en simulation.
 | `reg_en` | Registre avec reset synchrone et enable | `WIDTH = 8` | 7 |
 | `counter_en` | Compteur avec reset synchrone et enable | `WIDTH = 3` | 14 |
 | `clock_enable` | Générateur d’autorisation périodique | `DIVISOR = 4` | 16 |
-| **Total** | **5 testbenches** | | **49** |
+| `edge_detector` | Détecteur de montée d’un signal échantillonné | Entrée synchrone d’un bit | 10 |
+| **Total** | **6 testbenches** | | **59** |
 
-La régression locale et la première exécution GitHub Actions ont réussi.
+La régression locale des six testbenches a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
 
 La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
@@ -55,13 +56,15 @@ fpga-rtl-to-bitstream/
 │   ├── adder_sub.vhd
 │   ├── reg_en.vhd
 │   ├── counter_en.vhd
-│   └── clock_enable.vhd
+│   ├── clock_enable.vhd
+│   └── edge_detector.vhd
 ├── tb/
 │   ├── tb_mux21.vhd
 │   ├── tb_adder_sub.vhd
 │   ├── tb_reg_en.vhd
 │   ├── tb_counter_en.vhd
-│   └── tb_clock_enable.vhd
+│   ├── tb_clock_enable.vhd
+│   └── tb_edge_detector.vhd
 └── scripts/
     └── run_tests.py
 ```
@@ -81,14 +84,19 @@ Depuis la racine du dépôt :
 python3 scripts/run_tests.py
 ```
 
-Pour chaque module, le script analyse les sources, élabore le testbench et lance la simulation avec `--assert-level=error`.
+Pour chaque module, le script :
+
+1. Analyse le fichier RTL et son testbench.
+2. Élabore le testbench.
+3. Exécute la simulation avec `--assert-level=error`.
+4. Affiche `PASS` après réussite des commandes.
 
 Il s’arrête dès qu’une commande échoue et transmet son code de retour.
 
-Résultat attendu après réussite des cinq testbenches :
+Résultat attendu après réussite des six testbenches :
 
 ```text
-All 5 testbenches passed.
+All 6 testbenches passed.
 ```
 
 Pour consulter le code de retour immédiatement après l’exécution :
@@ -107,7 +115,7 @@ Le script doit être exécuté depuis la racine du dépôt. Il ne génère pas d
 Le workflow **VHDL Simulation**, défini dans `.github/workflows/simulation.yml`, s’exécute :
 
 - À chaque push.
-- Lors des événements de pull request pris en charge par le déclencheur.
+- Lors des événements de pull request couverts par le déclencheur.
 - À la demande avec le bouton **Run workflow**.
 
 Il utilise une machine GitHub sous Ubuntu 24.04 et réalise les étapes suivantes :
@@ -119,7 +127,7 @@ Il utilise une machine GitHub sous Ubuntu 24.04 et réalise les étapes suivante
 
 Le workflow possède un accès en lecture au contenu du dépôt et une limite d’exécution de 10 minutes.
 
-Une erreur de compilation, d’élaboration ou de simulation fait échouer le travail. Les résultats et les journaux sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
+Une erreur de compilation, d’élaboration ou de simulation fait échouer le travail. Les résultats et journaux sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
 
 La CI exécute les tests RTL ; elle ne réalise pas encore la synthèse ou la validation matérielle.
 
@@ -190,7 +198,7 @@ Le comptage s’effectue modulo `2^WIDTH`. Une incrémentation après la valeur 
 
 Les 14 vérifications couvrent le reset initial, l’incrémentation, le maintien pendant deux cycles, le comptage jusqu’à 7, le débordement, la reprise du comptage et le comportement du reset.
 
-Le chronogramme a également été inspecté pour confirmer le maintien, le débordement et le reset synchrone.
+Le chronogramme a également été inspecté.
 
 ### Générateur de clock enable — `clock_enable`
 
@@ -215,9 +223,50 @@ Cycle :  1 2 3 4 5 6 7 8
 tick  :  0 0 0 1 0 0 0 1
 ```
 
-Pour `DIVISOR = 1`, `tick` reste actif à chaque cycle hors reset.
+Pour `DIVISOR = 1`, `tick` reste actif à chaque cycle hors reset. Ce cas limite n’est pas encore testé.
 
 Les 16 vérifications portent sur le reset initial, la périodicité des impulsions et le redémarrage d’une période complète après un reset intermédiaire.
+
+### Détecteur de front montant — `edge_detector`
+
+Le module détecte un passage de `'0'` à `'1'` entre deux échantillons successifs de `sig_in`.
+
+L’entrée est observée au front montant de `clk`. Le signal interne `previous` mémorise l’échantillon précédent. La sortie `rise_pulse` est enregistrée au même front.
+
+Hors reset :
+
+```text
+rise_pulse suivant = NON previous ET sig_in
+previous suivant   = sig_in
+```
+
+| Échantillon précédent | Entrée actuelle | Impulsion suivante |
+|---|---|---|
+| `'0'` | `'0'` | `'0'` |
+| `'0'` | `'1'` | `'1'` |
+| `'1'` | `'0'` | `'0'` |
+| `'1'` | `'1'` | `'0'` |
+
+Le reset est synchrone, actif à l’état haut. Il remet `previous` et `rise_pulse` à zéro.
+
+Si l’entrée est déjà haute au premier front hors reset, une impulsion est produite puisque l’échantillon précédent a été remis à zéro.
+
+Les dix vérifications couvrent :
+
+1. Le reset initial.
+2. Une entrée inactive.
+3. Une première montée.
+4. La disparition de l’impulsion avec une entrée maintenue haute.
+5. Une descente sans impulsion.
+6. Une deuxième montée.
+7. L’absence d’effet immédiat du reset entre les fronts.
+8. L’effacement de l’impulsion au front de reset.
+9. Une entrée haute après désactivation du reset.
+10. La disparition de cette nouvelle impulsion au cycle suivant.
+
+La simulation et l’inspection du chronogramme ont confirmé ces comportements.
+
+L’entrée doit être synchrone avec `clk`. Le module ne contient pas de synchroniseur pour une entrée asynchrone. Une transition complète entre deux observations peut ne pas être détectée.
 
 ## Simulations individuelles
 
@@ -231,7 +280,7 @@ ghdl -e --std=08 tb_mux21
 ghdl -r --std=08 tb_mux21 --assert-level=error --vcd=mux21.vcd
 ```
 
-Résultat attendu : `MUX: all 8 binary cases passed.`
+Message attendu : `MUX: all 8 binary cases passed.`
 
 Fin de simulation : `80 ns`.
 
@@ -243,7 +292,7 @@ ghdl -e --std=08 tb_adder_sub
 ghdl -r --std=08 tb_adder_sub --assert-level=error --vcd=adder_sub.vcd
 ```
 
-Résultat attendu : `All tests passed.`
+Message attendu : `All tests passed.`
 
 Dernière vérification : `40 ns`.
 
@@ -255,7 +304,7 @@ ghdl -e --std=08 tb_reg_en
 ghdl -r --std=08 tb_reg_en --assert-level=error --vcd=reg_en.vcd
 ```
 
-Résultat attendu : `REG_EN: all 7 checks passed.`
+Message attendu : `REG_EN: all 7 checks passed.`
 
 Fin de simulation : `46 ns`.
 
@@ -267,7 +316,7 @@ ghdl -e --std=08 tb_counter_en
 ghdl -r --std=08 tb_counter_en --assert-level=error --vcd=counter_en.vcd
 ```
 
-Résultat attendu : `COUNTER_EN: all 14 checks passed.`
+Message attendu : `COUNTER_EN: all 14 checks passed.`
 
 Fin de simulation : `126 ns`.
 
@@ -279,9 +328,21 @@ ghdl -e --std=08 tb_clock_enable
 ghdl -r --std=08 tb_clock_enable --assert-level=error --vcd=clock_enable.vcd
 ```
 
-Résultat attendu : `CLOCK_ENABLE: all 16 checks passed.`
+Message attendu : `CLOCK_ENABLE: all 16 checks passed.`
 
 Fin de simulation : `156 ns`.
+
+### Détecteur de front montant
+
+```bash
+ghdl -a --std=08 rtl/edge_detector.vhd tb/tb_edge_detector.vhd
+ghdl -e --std=08 tb_edge_detector
+ghdl -r --std=08 tb_edge_detector --assert-level=error --vcd=edge_detector.vcd
+```
+
+Message attendu : `EDGE_DETECTOR: all 10 checks passed.`
+
+Fin de simulation : `86 ns`.
 
 ### Visualiser les chronogrammes
 
@@ -293,6 +354,7 @@ gtkwave adder_sub.vcd
 gtkwave reg_en.vcd
 gtkwave counter_en.vcd
 gtkwave clock_enable.vcd
+gtkwave edge_detector.vcd
 ```
 
 Les assertions comparent automatiquement les sorties aux valeurs attendues. Les chronogrammes permettent d’examiner les transitions des signaux.
@@ -305,9 +367,10 @@ Les assertions comparent automatiquement les sorties aux valeurs attendues. Les 
 | `adder_sub` | `N = 8` | Opérandes non exhaustifs ; autres largeurs non testées |
 | `reg_en` | `WIDTH = 8` | Autres largeurs non testées |
 | `counter_en` | `WIDTH = 3` | Autres largeurs non testées |
-| `clock_enable` | `DIVISOR = 4` | Autres diviseurs, notamment 1, non testés |
+| `clock_enable` | `DIVISOR = 4` | Autres diviseurs non testés |
+| `edge_detector` | Scénarios dirigés sur une entrée synchrone | Entrée asynchrone et valeurs non binaires non prises en charge par ces tests |
 
-Les 49 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Une régression réussie confirme les scénarios exécutés, sans prouver tous les comportements possibles des modules.
+Les 59 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Leur réussite confirme les scénarios exécutés.
 
 L’arrêt au premier échec du script Python a été contrôlé par injection temporaire d’un résultat attendu incorrect dans le testbench du multiplexeur.
 
@@ -325,8 +388,8 @@ Le dépôt conserve les sources RTL, les testbenches, les scripts et la document
 
 ## Prochaines étapes
 
-- Étendre les tests du générateur de clock enable aux cas limites
-- Détecteur de front et anti-rebond
+- Étendre les tests aux cas limites et à plusieurs paramètres
+- Synchronisation d’une entrée asynchrone et anti-rebond
 - Machines à états
 - FIFO synchrone et UART
 - Vérification structurée avec VUnit ou cocotb

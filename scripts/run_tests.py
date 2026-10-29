@@ -14,6 +14,7 @@ tests = [
     ("reg_en", "tb_reg_en"),
     ("counter_en", "tb_counter_en"),
     ("clock_enable", "tb_clock_enable"),
+    ("edge_detector", "tb_edge_detector"),
 ]
 
 for module, testbench in tests:
