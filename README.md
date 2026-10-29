@@ -6,15 +6,14 @@ Le dépôt rassemble les modules RTL, leurs testbenches auto-vérifiants et les 
 
 ## État actuel
 
-Trois modules RTL sont implémentés : deux modules combinatoires et un registre synchrone.
+Quatre modules RTL sont implémentés : deux modules combinatoires, un registre synchrone et un compteur synchrone.
 
-| Module | Description | Tests |
+| Module | Description | Vérification |
 |---|---|---|
 | `mux21` | Multiplexeur combinatoire 2 vers 1, sur un bit | 8 combinaisons binaires vérifiées par assertions |
-| `adder_sub` | Additionneur/soustracteur combinatoire non signé, paramétrable en largeur | 4 cas dirigés sur 8 bits |
-| `reg_en` | Registre paramétrable avec reset synchrone et enable | 7 vérifications dirigées prévues sur 8 bits |
-
-Les simulations du multiplexeur et de l’additionneur/soustracteur ont été validées. Le registre compile ; l’exécution de son testbench reste à confirmer.
+| `adder_sub` | Additionneur/soustracteur combinatoire non signé, paramétrable en largeur | 4 cas dirigés validés sur 8 bits |
+| `reg_en` | Registre paramétrable avec reset synchrone et enable | Compilation validée ; résultat des 7 vérifications à confirmer |
+| `counter_en` | Compteur paramétrable avec reset synchrone et enable | 14 vérifications réussies sur 3 bits et chronogramme inspecté |
 
 La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte constituent les prochaines phases du projet.
 
@@ -45,11 +44,13 @@ fpga-rtl-to-bitstream/
 ├── rtl/
 │   ├── mux21.vhd
 │   ├── adder_sub.vhd
-│   └── reg_en.vhd
+│   ├── reg_en.vhd
+│   └── counter_en.vhd
 └── tb/
     ├── tb_mux21.vhd
     ├── tb_adder_sub.vhd
-    └── tb_reg_en.vhd
+    ├── tb_reg_en.vhd
+    └── tb_counter_en.vhd
 ```
 
 - `rtl/` : descriptions matérielles destinées à la synthèse.
@@ -98,7 +99,7 @@ Le testbench vérifie quatre cas pour `N = 8` :
 | `5 - 10` | `251`, résultat modulo 256 |
 | `200 + 100` | `44`, résultat modulo 256 |
 
-Les autres largeurs ne sont pas encore testées.
+Les quatre vérifications ont réussi. Les autres largeurs ne sont pas encore testées.
 
 ### Registre synchrone — `reg_en`
 
@@ -123,6 +124,42 @@ Le testbench contient sept vérifications sur une instance de 8 bits :
 5. Conservation de la valeur lorsque l’enable est inactif.
 6. Absence de remise à zéro avant le front montant.
 7. Priorité du reset sur l’enable.
+
+La compilation du module est validée. Le résultat d’exécution du testbench reste à confirmer.
+
+### Compteur synchrone — `counter_en`
+
+Le compteur mémorise une valeur non signée sur `WIDTH` bits. La largeur par défaut est de 8 bits.
+
+| Condition au front montant | Action |
+|---|---|
+| `rst = '1'` | Remettre le compteur à zéro |
+| `rst = '0'` et `en = '1'` | Incrémenter le compteur |
+| `rst = '0'` et `en = '0'` | Conserver la valeur précédente |
+
+Le reset est synchrone, actif à l’état haut et prioritaire sur l’enable.
+
+Le comptage s’effectue modulo `2^WIDTH`. Après la valeur maximale, une nouvelle incrémentation ramène le compteur à zéro. Avec l’enable inactif, la valeur maximale est conservée.
+
+Le testbench réalise 14 vérifications sur une instance de 3 bits :
+
+| Scénario | Nombre de vérifications |
+|---|---:|
+| Reset initial | 1 |
+| Première incrémentation | 1 |
+| Maintien pendant deux cycles | 2 |
+| Comptage des valeurs 2 à 7 | 6 |
+| Retour à zéro après 7 | 1 |
+| Reprise du comptage après débordement | 1 |
+| Absence d’action du reset avant le front montant | 1 |
+| Priorité du reset sur l’enable | 1 |
+| **Total** | **14** |
+
+Les 14 vérifications ont réussi. La simulation se termine à `126 ns`.
+
+Le chronogramme a également été inspecté : lors de l’activation du reset à `120 ns`, la sortie conserve sa valeur jusqu’au front montant à `125 ns`.
+
+Les autres largeurs ne sont pas encore testées.
 
 ## Exécuter les simulations
 
@@ -178,6 +215,22 @@ REG_EN: all 7 checks passed.
 
 La simulation doit se terminer à `46 ns`.
 
+### Compteur synchrone
+
+```bash
+ghdl -a --std=08 rtl/counter_en.vhd tb/tb_counter_en.vhd
+ghdl -e --std=08 tb_counter_en
+ghdl -r --std=08 tb_counter_en --assert-level=error --vcd=counter_en.vcd
+```
+
+Message attendu :
+
+```text
+COUNTER_EN: all 14 checks passed.
+```
+
+La simulation se termine à `126 ns`.
+
 ### Gestion des erreurs
 
 L’option `--assert-level=error` arrête la simulation lorsqu’une assertion de niveau `error` ou supérieur échoue.
@@ -192,19 +245,21 @@ Après les simulations :
 gtkwave mux21.vcd
 gtkwave adder_sub.vcd
 gtkwave reg_en.vcd
+gtkwave counter_en.vcd
 ```
 
 Les traces VCD permettent d’examiner les transitions des signaux. Les assertions assurent la vérification automatique des résultats attendus.
 
-Pour le registre, afficher les signaux `clk_tb`, `rst_tb`, `en_tb`, `d_tb` et `q_tb`. Un affichage décimal non signé facilite la lecture des données.
+Pour les circuits séquentiels, afficher l’horloge, le reset, l’enable et les données. Un affichage décimal non signé facilite la lecture des valeurs du compteur.
 
 ## Périmètre de vérification
 
 | Module | Périmètre actuel | Limites |
 |---|---|---|
-| `mux21` | Toutes les combinaisons des trois entrées binaires | Autres valeurs de `std_logic` non testées |
-| `adder_sub` | Quatre cas dirigés sur 8 bits | Autres opérandes et largeurs non couverts exhaustivement |
-| `reg_en` | Sept vérifications dirigées sur 8 bits | Exécution à confirmer ; autres largeurs non testées |
+| `mux21` | Toutes les combinaisons des trois entrées binaires ; détection d’erreur contrôlée | Autres valeurs de `std_logic` non testées |
+| `adder_sub` | Quatre cas dirigés validés sur 8 bits | Opérandes non couverts exhaustivement ; autres largeurs non testées |
+| `reg_en` | Sept vérifications dirigées définies sur 8 bits | Exécution à confirmer ; autres largeurs non testées |
+| `counter_en` | Quatorze vérifications réussies sur 3 bits ; chronogramme inspecté | Autres largeurs non testées |
 
 Le nombre de vérifications ne constitue pas une mesure de couverture de code ou de couverture fonctionnelle.
 
@@ -222,9 +277,9 @@ Le dépôt conserve les sources RTL, les testbenches et la documentation nécess
 
 ## Prochaines étapes
 
-- Validation du testbench et du chronogramme du registre
-- Compteur synchrone avec enable
+- Confirmation des résultats du testbench du registre
 - Automatisation des simulations
+- Générateur de clock enable et machines à états
 - FIFO synchrone et UART
 - Intégration des modules dans un système pilotable par UART
 - Régression automatique avec GitHub Actions
