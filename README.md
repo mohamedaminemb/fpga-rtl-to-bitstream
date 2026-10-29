@@ -2,35 +2,37 @@
 
 Conception de modules numériques en VHDL et construction progressive d’un flot FPGA, de la vérification RTL à la génération du bitstream.
 
-Le dépôt rassemble les modules RTL, leurs testbenches auto-vérifiants et les instructions permettant de reproduire les simulations. Le développement se poursuit avec l’automatisation des tests, la synthèse, l’analyse de timing et la validation sur carte.
+Le dépôt rassemble les modules RTL, leurs testbenches auto-vérifiants et un script Python permettant de rejouer les simulations avec une seule commande.
 
 ## État actuel
 
-Quatre modules RTL sont implémentés : deux modules combinatoires, un registre synchrone et un compteur synchrone.
+Quatre modules RTL sont implémentés et vérifiés en simulation.
 
 | Module | Description | Vérification |
 |---|---|---|
-| `mux21` | Multiplexeur combinatoire 2 vers 1, sur un bit | 8 combinaisons binaires vérifiées par assertions |
-| `adder_sub` | Additionneur/soustracteur combinatoire non signé, paramétrable en largeur | 4 cas dirigés validés sur 8 bits |
-| `reg_en` | Registre paramétrable avec reset synchrone et enable | Compilation validée ; résultat des 7 vérifications à confirmer |
-| `counter_en` | Compteur paramétrable avec reset synchrone et enable | 14 vérifications réussies sur 3 bits et chronogramme inspecté |
+| `mux21` | Multiplexeur combinatoire 2 vers 1, sur un bit | 8 combinaisons binaires |
+| `adder_sub` | Additionneur/soustracteur combinatoire non signé, paramétrable en largeur | 4 cas dirigés sur 8 bits |
+| `reg_en` | Registre paramétrable avec reset synchrone et enable | 7 vérifications sur 8 bits |
+| `counter_en` | Compteur paramétrable avec reset synchrone et enable | 14 vérifications sur 3 bits |
 
-La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte constituent les prochaines phases du projet.
+La régression exécute **4 testbenches et 33 vérifications**. Elle s’arrête dès qu’une commande GHDL échoue.
 
-## Environnement
+La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
-- **Système de développement :** Ubuntu 24.04 LTS
-- **Langage :** VHDL-2008
-- **Simulateur :** GHDL
-- **Visualisation des chronogrammes :** GTKWave
-- **Éditeur :** VS Code avec TerosHDL
-- **Gestion de version :** Git et GitHub
+## Prérequis
 
-Les outils `ghdl` et `gtkwave` doivent être accessibles depuis le terminal.
+- **Python 3** pour le script de régression
+- **GHDL** avec prise en charge de VHDL-2008
+- **GTKWave**, facultatif, pour examiner les chronogrammes
 
-Pour consulter leurs versions :
+Environnement de développement : Ubuntu 24.04 LTS, VS Code avec TerosHDL, Git et GitHub.
+
+Le script utilise uniquement la bibliothèque standard Python et ne nécessite aucun paquet Python supplémentaire.
+
+Pour consulter les versions installées :
 
 ```bash
+python3 --version
 ghdl --version
 gtkwave --version
 ```
@@ -46,17 +48,53 @@ fpga-rtl-to-bitstream/
 │   ├── adder_sub.vhd
 │   ├── reg_en.vhd
 │   └── counter_en.vhd
-└── tb/
-    ├── tb_mux21.vhd
-    ├── tb_adder_sub.vhd
-    ├── tb_reg_en.vhd
-    └── tb_counter_en.vhd
+├── tb/
+│   ├── tb_mux21.vhd
+│   ├── tb_adder_sub.vhd
+│   ├── tb_reg_en.vhd
+│   └── tb_counter_en.vhd
+└── scripts/
+    └── run_tests.py
 ```
 
 - `rtl/` : descriptions matérielles destinées à la synthèse.
 - `tb/` : bancs de test utilisés pour la simulation.
+- `scripts/` : automatisation des simulations.
 
-Les dossiers de scripts, de contraintes et de documentation seront complétés au fil du développement.
+Les dossiers de contraintes et de documentation seront complétés au fil du développement.
+
+## Lancer tous les tests
+
+Depuis la racine du dépôt :
+
+```bash
+python3 scripts/run_tests.py
+```
+
+Pour chaque module, le script :
+
+1. Analyse le fichier RTL et son testbench.
+2. Élabore le testbench.
+3. Exécute la simulation avec `--assert-level=error`.
+4. Affiche `PASS` si les commandes réussissent.
+
+Le script s’arrête au premier échec et transmet le code de retour de la commande concernée.
+
+Si les quatre testbenches réussissent, il affiche :
+
+```text
+All 4 testbenches passed.
+```
+
+Pour consulter le code de retour immédiatement après l’exécution :
+
+```bash
+echo $?
+```
+
+Un code `0` indique la réussite de la régression. Un code différent de zéro indique un échec.
+
+La version actuelle du script doit être exécutée depuis la racine du dépôt. Elle ne génère pas de traces VCD ; les commandes individuelles ci-dessous permettent de les produire.
 
 ## Modules RTL
 
@@ -73,9 +111,9 @@ Le circuit est combinatoire et ne possède ni horloge ni registre.
 
 Le testbench applique les 8 combinaisons binaires de `a`, `b` et `sel`. Une assertion compare la sortie au résultat attendu pour chaque combinaison.
 
-La détection d’erreur a également été contrôlée en modifiant temporairement un résultat attendu : le testbench a signalé l’écart et arrêté la simulation. Cette modification volontaire est retirée de la version finale.
+La détection d’erreur a été contrôlée en modifiant temporairement un résultat attendu. L’assertion a signalé l’écart et interrompu la simulation. Cette modification volontaire a ensuite été retirée.
 
-Les tests couvrent les valeurs binaires `'0'` et `'1'`. Le comportement avec les autres valeurs de `std_logic`, notamment `'X'` et `'U'`, n’est pas vérifié.
+Les tests couvrent les valeurs binaires `'0'` et `'1'`. Les autres valeurs de `std_logic`, notamment `'X'` et `'U'`, ne sont pas testées.
 
 ### Additionneur/soustracteur — `adder_sub`
 
@@ -115,17 +153,19 @@ Le reset est synchrone, actif à l’état haut et prioritaire sur l’enable. S
 
 Le module ne définit pas de valeur initiale pour `q`. Le testbench applique un reset au début de la simulation.
 
-Le testbench contient sept vérifications sur une instance de 8 bits :
+Les sept vérifications portent sur :
 
-1. Remise à zéro au front montant.
-2. Chargement de la valeur 12 avec enable actif.
-3. Conservation de la sortie lorsque l’entrée change entre les fronts montants.
-4. Chargement de la valeur 25 au front montant suivant.
-5. Conservation de la valeur lorsque l’enable est inactif.
-6. Absence de remise à zéro avant le front montant.
-7. Priorité du reset sur l’enable.
+1. La remise à zéro au front montant.
+2. Le chargement de la valeur 12.
+3. La conservation de la sortie lorsque l’entrée change entre les fronts montants.
+4. Le chargement de la valeur 25.
+5. La conservation de la valeur avec enable inactif.
+6. L’absence de remise à zéro avant le front montant.
+7. La priorité du reset sur l’enable.
 
-La compilation du module est validée. Le résultat d’exécution du testbench reste à confirmer.
+Les sept vérifications ont réussi sur une instance de 8 bits. La simulation se termine à `46 ns`.
+
+Les autres largeurs ne sont pas encore testées.
 
 ### Compteur synchrone — `counter_en`
 
@@ -161,11 +201,11 @@ Le chronogramme a également été inspecté : lors de l’activation du reset �
 
 Les autres largeurs ne sont pas encore testées.
 
-## Exécuter les simulations
+## Simulations individuelles et chronogrammes
 
 Exécuter les commandes depuis la racine du dépôt.
 
-L’option `--std=08` sélectionne VHDL-2008. Elle doit être utilisée pour l’analyse, l’élaboration et l’exécution.
+L’option `--std=08` sélectionne VHDL-2008. Elle est utilisée pour l’analyse, l’élaboration et l’exécution.
 
 ### Multiplexeur
 
@@ -181,7 +221,7 @@ Message attendu :
 MUX: all 8 binary cases passed.
 ```
 
-La simulation se termine à `80 ns`.
+Fin de simulation : `80 ns`.
 
 ### Additionneur/soustracteur
 
@@ -197,7 +237,7 @@ Message attendu :
 All tests passed.
 ```
 
-La dernière vérification a lieu à `40 ns`.
+Dernière vérification : `40 ns`.
 
 ### Registre synchrone
 
@@ -213,7 +253,7 @@ Message attendu :
 REG_EN: all 7 checks passed.
 ```
 
-La simulation doit se terminer à `46 ns`.
+Fin de simulation : `46 ns`.
 
 ### Compteur synchrone
 
@@ -229,17 +269,11 @@ Message attendu :
 COUNTER_EN: all 14 checks passed.
 ```
 
-La simulation se termine à `126 ns`.
+Fin de simulation : `126 ns`.
 
-### Gestion des erreurs
+### Visualisation
 
-L’option `--assert-level=error` arrête la simulation lorsqu’une assertion de niveau `error` ou supérieur échoue.
-
-Un message de réussite concerne uniquement les vérifications exécutées par le testbench. Il ne constitue pas une preuve de correction pour tous les comportements possibles du circuit.
-
-### Visualisation des chronogrammes
-
-Après les simulations :
+Après génération des fichiers VCD :
 
 ```bash
 gtkwave mux21.vcd
@@ -248,20 +282,33 @@ gtkwave reg_en.vcd
 gtkwave counter_en.vcd
 ```
 
-Les traces VCD permettent d’examiner les transitions des signaux. Les assertions assurent la vérification automatique des résultats attendus.
+Les traces permettent d’examiner les transitions des signaux. Les assertions assurent la vérification automatique des résultats attendus.
 
 Pour les circuits séquentiels, afficher l’horloge, le reset, l’enable et les données. Un affichage décimal non signé facilite la lecture des valeurs du compteur.
 
-## Périmètre de vérification
+## Stratégie de vérification
+
+Les testbenches utilisent des scénarios dirigés et des assertions.
+
+L’option `--assert-level=error` interrompt une simulation lorsqu’une assertion de niveau `error` ou supérieur échoue. Le script Python interrompt ensuite la régression lorsqu’il reçoit un code de retour non nul.
+
+Ce comportement a été contrôlé avec une erreur attendue volontairement incorrecte dans le testbench du multiplexeur :
+
+- L’assertion a échoué.
+- La régression s’est arrêtée avant les autres testbenches.
+- Le message final de réussite n’a pas été affiché.
+- Après restauration du test, les quatre testbenches ont réussi avec un code de retour global égal à `0`.
+
+### Périmètre et limites
 
 | Module | Périmètre actuel | Limites |
 |---|---|---|
-| `mux21` | Toutes les combinaisons des trois entrées binaires ; détection d’erreur contrôlée | Autres valeurs de `std_logic` non testées |
-| `adder_sub` | Quatre cas dirigés validés sur 8 bits | Opérandes non couverts exhaustivement ; autres largeurs non testées |
-| `reg_en` | Sept vérifications dirigées définies sur 8 bits | Exécution à confirmer ; autres largeurs non testées |
-| `counter_en` | Quatorze vérifications réussies sur 3 bits ; chronogramme inspecté | Autres largeurs non testées |
+| `mux21` | Toutes les combinaisons des trois entrées binaires | Autres valeurs de `std_logic` non testées |
+| `adder_sub` | Quatre cas dirigés sur 8 bits | Opérandes non couverts exhaustivement ; autres largeurs non testées |
+| `reg_en` | Sept vérifications dirigées sur 8 bits | Autres largeurs non testées |
+| `counter_en` | Quatorze vérifications sur 3 bits et inspection du chronogramme | Autres largeurs non testées |
 
-Le nombre de vérifications ne constitue pas une mesure de couverture de code ou de couverture fonctionnelle.
+Les 33 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Leur réussite concerne les scénarios exécutés, sans prouver tous les comportements possibles des modules.
 
 ## Fichiers générés
 
@@ -273,14 +320,15 @@ Les fichiers de travail GHDL et les traces de simulation sont produits localemen
 *.o
 ```
 
-Le dépôt conserve les sources RTL, les testbenches et la documentation nécessaires pour reproduire les simulations.
+Le dépôt conserve les sources RTL, les testbenches, les scripts et la documentation nécessaires pour reproduire les simulations.
 
 ## Prochaines étapes
 
-- Confirmation des résultats du testbench du registre
-- Automatisation des simulations
-- Générateur de clock enable et machines à états
+- Générateur de clock enable
+- Détecteur de front et anti-rebond
+- Machines à états
 - FIFO synchrone et UART
+- Vérification structurée avec VUnit ou cocotb
 - Intégration des modules dans un système pilotable par UART
 - Régression automatique avec GitHub Actions
 - Synthèse, contraintes et analyse de timing
