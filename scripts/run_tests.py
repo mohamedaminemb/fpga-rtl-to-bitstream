@@ -13,6 +13,7 @@ tests = [
     ("adder_sub", "tb_adder_sub"),
     ("reg_en", "tb_reg_en"),
     ("counter_en", "tb_counter_en"),
+    ("clock_enable", "tb_clock_enable"),
 ]
 
 for module, testbench in tests:
@@ -35,4 +36,4 @@ for module, testbench in tests:
 
     print(f"PASS: {module}", flush=True)
 
-print("All 4 testbenches passed.", flush=True)
+print(f"All {len(tests)} testbenches passed.", flush=True)
