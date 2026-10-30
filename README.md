@@ -8,7 +8,7 @@ Le dépôt rassemble les sources RTL, leurs testbenches auto-vérifiants et une 
 
 ## État actuel
 
-Huit modules RTL sont implémentés et vérifiés en simulation.
+Le projet contient huit composants de base et un module d’intégration pour le traitement d’un bouton.
 
 | Module | Description | Configuration testée | Vérifications |
 |---|---|---|---:|
@@ -20,9 +20,10 @@ Huit modules RTL sont implémentés et vérifiés en simulation.
 | `edge_detector` | Détecteur de montée d’un signal échantillonné | Entrée synchrone d’un bit | 10 |
 | `sync_2ff` | Synchroniseur à deux bascules | Entrée d’un bit | 13 |
 | `debouncer` | Filtre anti-rebond | `STABLE_CYCLES = 3` | 25 |
-| **Total** | **8 testbenches** | | **97** |
+| `button_conditioner` | Intégration synchroniseur, anti-rebond et détecteur | `STABLE_CYCLES = 3` | 88 |
+| **Total** | **9 testbenches** | | **185** |
 
-La régression locale des huit testbenches a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
+La régression locale des neuf testbenches a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
 
 La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
@@ -62,7 +63,8 @@ fpga-rtl-to-bitstream/
 │   ├── clock_enable.vhd
 │   ├── edge_detector.vhd
 │   ├── sync_2ff.vhd
-│   └── debouncer.vhd
+│   ├── debouncer.vhd
+│   └── button_conditioner.vhd
 ├── tb/
 │   ├── tb_mux21.vhd
 │   ├── tb_adder_sub.vhd
@@ -71,7 +73,8 @@ fpga-rtl-to-bitstream/
 │   ├── tb_clock_enable.vhd
 │   ├── tb_edge_detector.vhd
 │   ├── tb_sync_2ff.vhd
-│   └── tb_debouncer.vhd
+│   ├── tb_debouncer.vhd
+│   └── tb_button_conditioner.vhd
 └── scripts/
     └── run_tests.py
 ```
@@ -101,10 +104,10 @@ Pour chaque module, le script :
 
 Il s’arrête dès qu’une commande échoue et transmet son code de retour.
 
-Résultat attendu après réussite des huit testbenches :
+Résultat attendu :
 
 ```text
-All 8 testbenches passed.
+All 9 testbenches passed.
 ```
 
 Pour consulter le code de retour immédiatement après l’exécution :
@@ -117,6 +120,8 @@ echo $?
 - Autre valeur : échec.
 
 Le script doit être exécuté depuis la racine du dépôt. Il ne génère pas de traces VCD.
+
+L’ordre des modules dans sa liste de tests respecte les dépendances : les composants sont analysés avant le module `button_conditioner` qui les instancie.
 
 ## Intégration continue
 
@@ -139,7 +144,7 @@ Une erreur de compilation, d’élaboration ou de simulation fait échouer le tr
 
 La CI exécute les tests RTL. La synthèse et la validation matérielle restent à intégrer au flot.
 
-## Modules RTL
+## Composants RTL
 
 ### Multiplexeur — `mux21`
 
@@ -255,7 +260,7 @@ previous suivant   = sig_in
 | `'1'` | `'0'` | `'0'` |
 | `'1'` | `'1'` | `'0'` |
 
-Le reset est synchrone et actif à l’état haut. Il remet `previous` et `rise_pulse` à zéro.
+Le reset remet `previous` et `rise_pulse` à zéro.
 
 Si l’entrée est déjà haute au premier front hors reset, une impulsion est produite puisque l’échantillon précédent a été remis à zéro.
 
@@ -299,11 +304,11 @@ Le générique `STABLE_CYCLES` est strictement positif et vaut 3 par défaut.
 | Condition au front montant | Action |
 |---|---|
 | `rst = '1'` | Remettre la sortie et le compteur à zéro |
-| Entrée égale à la sortie actuelle | Annuler l’attente en remettant le compteur à zéro |
+| Entrée égale à la sortie actuelle | Annuler l’attente |
 | Entrée différente, seuil non atteint | Incrémenter le compteur |
 | Entrée différente, dernière observation requise | Accepter l’entrée et remettre le compteur à zéro |
 
-Le compteur indique le nombre d’observations déjà effectuées. Avec `STABLE_CYCLES = 3`, il prend les valeurs 0, 1 et 2. La troisième observation déclenche l’acceptation.
+Avec `STABLE_CYCLES = 3`, le compteur prend les valeurs 0, 1 et 2. La troisième observation déclenche l’acceptation.
 
 Exemple après reset :
 
@@ -312,32 +317,79 @@ Entrée :  1 0 1 1 1 0 1
 Sortie :  0 0 0 0 1 1 1
 ```
 
-Le reset est synchrone et actif à l’état haut.
-
-Les 25 vérifications utilisent `STABLE_CYCLES = 3` :
-
-| Scénario | Vérifications |
-|---|---:|
-| Reset initial | 1 |
-| Rejet d’une impulsion trop courte | 4 |
-| Montée avec rebond | 7 |
-| Descente avec rebond | 7 |
-| Préparation d’une transition en attente | 2 |
-| Reset pendant l’attente | 1 |
-| Nouvelle attente complète après reset | 3 |
-| **Total** | **25** |
+Les 25 vérifications couvrent le reset initial, le rejet d’une impulsion trop courte, les montées et descentes avec rebonds, ainsi que l’annulation d’une attente par le reset.
 
 La simulation et l’inspection du chronogramme ont confirmé les scénarios testés.
 
 Le cas `STABLE_CYCLES = 1`, les autres paramètres et le reset appliqué à une sortie haute restent à tester.
 
-Le module ne contient pas de synchroniseur. Pour une entrée extérieure, la chaîne d’intégration prévue est :
+## Intégration — `button_conditioner`
+
+Le module assemble trois composants :
 
 ```text
-Entrée extérieure → sync_2ff → debouncer → edge_detector
+button_in
+    ↓
+ sync_2ff
+    ↓
+ debouncer ─────────→ button_clean
+    ↓
+ edge_detector
+    ↓
+ press_pulse
 ```
 
-Ces blocs sont actuellement vérifiés séparément ; leur intégration reste à réaliser.
+Les trois composants partagent la même horloge et le même reset synchrone actif à l’état haut.
+
+| Port ou paramètre | Rôle |
+|---|---|
+| `STABLE_CYCLES` | Nombre d’observations nécessaires pour accepter un changement |
+| `clk` | Horloge commune |
+| `rst` | Reset commun |
+| `button_in` | Entrée extérieure active à l’état haut |
+| `button_clean` | État synchronisé et filtré |
+| `press_pulse` | Impulsion d’un cycle à chaque montée de l’état filtré |
+
+Le paramètre `STABLE_CYCLES` est transmis au composant `debouncer`.
+
+### Comportement temporel
+
+Chaque processus cadencé utilise les valeurs disponibles avant le front montant. Le détecteur observe donc la montée de `button_clean` au front suivant : `press_pulse` est décalé d’un cycle par rapport à cette montée.
+
+Avec `STABLE_CYCLES = 3`, dans le scénario simulé où l’entrée monte au front descendant :
+
+| Front montant après application de l’entrée | `button_clean` | `press_pulse` |
+|---|---|---|
+| 1 | 0 | 0 |
+| 2 | 0 | 0 |
+| 3 | 0 | 0 |
+| 4 | 0 | 0 |
+| 5 | 1 | 0 |
+| 6 | 1 | 1 |
+| 7 | 1 | 0 |
+
+Une entrée maintenue haute ne produit pas d’impulsion supplémentaire. Un relâchement accepté permet de détecter un nouvel appui.
+
+Après reset, une entrée maintenue haute est interprétée comme un appui une fois synchronisée et filtrée.
+
+### Vérification d’intégration
+
+Le testbench réalise 88 vérifications, soit deux comparaisons de sortie à chacun des 44 instants de contrôle.
+
+| Scénario | Vérifications |
+|---|---:|
+| Reset initial | 2 |
+| Premier appui propre | 14 |
+| Maintien prolongé | 10 |
+| Relâchement propre | 14 |
+| Deuxième appui propre | 14 |
+| Relâchement avec rebond | 16 |
+| Appui avec rebond | 18 |
+| **Total** | **88** |
+
+Les rebonds sont des stimuli numériques simplifiés. Le test vérifie que les changements courts du scénario sont rejetés et qu’un appui accepté produit une seule impulsion.
+
+Les autres valeurs de `STABLE_CYCLES` et le reset pendant un appui restent à tester.
 
 ## Simulations individuelles
 
@@ -439,26 +491,35 @@ Message attendu : `DEBOUNCER: all 25 checks passed.`
 
 Fin de simulation : `246 ns`.
 
-### Visualiser les chronogrammes
+### Traitement complet du bouton
 
-Après génération des fichiers VCD :
+Analyser les composants avant le module d’intégration :
 
 ```bash
-gtkwave mux21.vcd
-gtkwave adder_sub.vcd
-gtkwave reg_en.vcd
-gtkwave counter_en.vcd
-gtkwave clock_enable.vcd
-gtkwave edge_detector.vcd
-gtkwave sync_2ff.vcd
-gtkwave debouncer.vcd
+ghdl -a --std=08 rtl/sync_2ff.vhd rtl/debouncer.vhd rtl/edge_detector.vhd rtl/button_conditioner.vhd tb/tb_button_conditioner.vhd
+ghdl -e --std=08 tb_button_conditioner
+ghdl -r --std=08 tb_button_conditioner --assert-level=error --vcd=button_conditioner.vcd
 ```
 
-Les assertions comparent automatiquement les sorties aux valeurs attendues. Les chronogrammes permettent d’examiner les transitions des signaux.
+Message attendu : `BUTTON_CONDITIONER: all 88 checks passed.`
+
+Fin de simulation : `436 ns`.
+
+### Visualiser un chronogramme
+
+Après génération du fichier VCD correspondant :
+
+```bash
+gtkwave button_conditioner.vcd
+```
+
+Pour l’intégration, afficher `clk_tb`, `rst_tb`, `button_in_tb`, `button_clean_tb` et `press_pulse_tb`.
+
+Les assertions comparent automatiquement les sorties aux valeurs attendues. Les chronogrammes permettent d’examiner les transitions.
 
 ## Configuration de l’éditeur
 
-Le fichier `vhdl_ls.toml` associe les sources RTL et les testbenches à une bibliothèque commune pour l’analyse dans l’éditeur :
+Le fichier `vhdl_ls.toml` associe les sources RTL et les testbenches à une bibliothèque commune :
 
 ```toml
 standard = "2008"
@@ -481,11 +542,12 @@ Cette configuration est indépendante de la compilation GHDL réalisée par le s
 | `reg_en` | `WIDTH = 8` | Autres largeurs non testées |
 | `counter_en` | `WIDTH = 3` | Autres largeurs non testées |
 | `clock_enable` | `DIVISOR = 4` | Autres diviseurs non testés |
-| `edge_detector` | Scénarios dirigés sur une entrée synchrone | Transitions entre observations et valeurs non binaires non couvertes |
+| `edge_detector` | Entrée synchrone, scénarios dirigés | Transitions entre observations et valeurs non binaires non couvertes |
 | `sync_2ff` | Scénarios logiques dirigés | Métastabilité physique et fiabilité matérielle non évaluées |
 | `debouncer` | `STABLE_CYCLES = 3` | Autres paramètres et reset sur sortie haute non testés |
+| `button_conditioner` | `STABLE_CYCLES = 3`, appuis et rebonds simulés | Autres paramètres, reset pendant un appui et validation matérielle non testés |
 
-Les 97 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Leur réussite confirme les scénarios exécutés.
+Les 185 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Plusieurs comparaisons peuvent appartenir au même scénario.
 
 L’arrêt au premier échec du script Python a été contrôlé par injection temporaire d’un résultat attendu incorrect dans le testbench du multiplexeur.
 
@@ -504,7 +566,6 @@ Le dépôt conserve les sources RTL, les testbenches, les scripts et la document
 ## Prochaines étapes
 
 - Étendre les tests aux cas limites et à plusieurs paramètres
-- Intégrer la chaîne synchroniseur, anti-rebond et détecteur de front
 - Machines à états
 - FIFO synchrone et UART
 - Vérification structurée avec VUnit ou cocotb

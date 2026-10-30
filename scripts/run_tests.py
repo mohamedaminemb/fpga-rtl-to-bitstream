@@ -17,6 +17,7 @@ tests = [
     ("edge_detector", "tb_edge_detector"),
     ("sync_2ff", "tb_sync_2ff"),
     ("debouncer", "tb_debouncer"),
+    ("button_conditioner", "tb_button_conditioner"),
 ]
 
 for module, testbench in tests:
