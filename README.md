@@ -8,7 +8,7 @@ Le dépôt rassemble les sources RTL, leurs testbenches auto-vérifiants et une 
 
 ## État actuel
 
-Sept modules RTL sont implémentés et vérifiés en simulation.
+Huit modules RTL sont implémentés et vérifiés en simulation.
 
 | Module | Description | Configuration testée | Vérifications |
 |---|---|---|---:|
@@ -19,9 +19,10 @@ Sept modules RTL sont implémentés et vérifiés en simulation.
 | `clock_enable` | Générateur d’autorisation périodique | `DIVISOR = 4` | 16 |
 | `edge_detector` | Détecteur de montée d’un signal échantillonné | Entrée synchrone d’un bit | 10 |
 | `sync_2ff` | Synchroniseur à deux bascules | Entrée d’un bit | 13 |
-| **Total** | **7 testbenches** | | **72** |
+| `debouncer` | Filtre anti-rebond | `STABLE_CYCLES = 3` | 25 |
+| **Total** | **8 testbenches** | | **97** |
 
-Les simulations individuelles ont réussi. Le script de régression inclut les sept testbenches. Le badge indique le résultat du workflow publié sur la branche `main`.
+La régression locale des huit testbenches a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
 
 La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
@@ -60,7 +61,8 @@ fpga-rtl-to-bitstream/
 │   ├── counter_en.vhd
 │   ├── clock_enable.vhd
 │   ├── edge_detector.vhd
-│   └── sync_2ff.vhd
+│   ├── sync_2ff.vhd
+│   └── debouncer.vhd
 ├── tb/
 │   ├── tb_mux21.vhd
 │   ├── tb_adder_sub.vhd
@@ -68,7 +70,8 @@ fpga-rtl-to-bitstream/
 │   ├── tb_counter_en.vhd
 │   ├── tb_clock_enable.vhd
 │   ├── tb_edge_detector.vhd
-│   └── tb_sync_2ff.vhd
+│   ├── tb_sync_2ff.vhd
+│   └── tb_debouncer.vhd
 └── scripts/
     └── run_tests.py
 ```
@@ -98,10 +101,10 @@ Pour chaque module, le script :
 
 Il s’arrête dès qu’une commande échoue et transmet son code de retour.
 
-Résultat attendu après réussite des sept testbenches :
+Résultat attendu après réussite des huit testbenches :
 
 ```text
-All 7 testbenches passed.
+All 8 testbenches passed.
 ```
 
 Pour consulter le code de retour immédiatement après l’exécution :
@@ -134,7 +137,7 @@ Le workflow possède un accès en lecture au contenu du dépôt et une limite d�
 
 Une erreur de compilation, d’élaboration ou de simulation fait échouer le travail. Les résultats et journaux sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
 
-La CI exécute les tests RTL. La synthèse et la validation matérielle seront ajoutées dans les phases suivantes du projet.
+La CI exécute les tests RTL. La synthèse et la validation matérielle restent à intégrer au flot.
 
 ## Modules RTL
 
@@ -277,27 +280,64 @@ stage1 suivant   = async_in
 sync_out suivant = ancienne valeur de stage1
 ```
 
-Une valeur capturée par la première bascule atteint donc la sortie au front montant suivant.
+Une valeur capturée par la première bascule atteint la sortie au front montant suivant.
 
 Le reset est synchrone, actif à l’état haut et prioritaire. Il remet les deux bascules à zéro.
 
-Les 13 vérifications portent sur :
-
-- Le reset initial.
-- L’absence de changement de sortie entre les fronts lors d’une montée et d’une descente.
-- La propagation d’une montée à travers les deux bascules.
-- Le maintien d’un niveau haut.
-- La propagation d’une descente.
-- La préparation d’une sortie haute avant reset.
-- Le caractère synchrone du reset.
-- La remise à zéro de la sortie.
-- Le redémarrage sur deux fronts après désactivation du reset.
-
-La simulation individuelle réussit et se termine à `106 ns`.
+Les 13 vérifications portent sur le reset initial, la propagation des montées et descentes, le maintien d’un niveau haut, l’absence de changement entre les fronts, le reset sur une sortie haute et le redémarrage après reset.
 
 Le synchroniseur est destiné à un signal de niveau d’un bit qui reste stable suffisamment longtemps pour être échantillonné. Il ne garantit pas la capture d’une impulsion brève et ne constitue pas une solution générale pour un bus multibit.
 
 La simulation RTL vérifie le comportement logique. Elle ne reproduit pas la métastabilité physique et ne prouve pas la fiabilité de la traversée asynchrone. Les attributs propres au FPGA, le placement et les contraintes seront traités lors de l’implémentation.
+
+### Filtre anti-rebond — `debouncer`
+
+Le module filtre une entrée déjà synchronisée. Il accepte une nouvelle valeur après `STABLE_CYCLES` observations consécutives différentes de la sortie actuelle.
+
+Le générique `STABLE_CYCLES` est strictement positif et vaut 3 par défaut.
+
+| Condition au front montant | Action |
+|---|---|
+| `rst = '1'` | Remettre la sortie et le compteur à zéro |
+| Entrée égale à la sortie actuelle | Annuler l’attente en remettant le compteur à zéro |
+| Entrée différente, seuil non atteint | Incrémenter le compteur |
+| Entrée différente, dernière observation requise | Accepter l’entrée et remettre le compteur à zéro |
+
+Le compteur indique le nombre d’observations déjà effectuées. Avec `STABLE_CYCLES = 3`, il prend les valeurs 0, 1 et 2. La troisième observation déclenche l’acceptation.
+
+Exemple après reset :
+
+```text
+Entrée :  1 0 1 1 1 0 1
+Sortie :  0 0 0 0 1 1 1
+```
+
+Le reset est synchrone et actif à l’état haut.
+
+Les 25 vérifications utilisent `STABLE_CYCLES = 3` :
+
+| Scénario | Vérifications |
+|---|---:|
+| Reset initial | 1 |
+| Rejet d’une impulsion trop courte | 4 |
+| Montée avec rebond | 7 |
+| Descente avec rebond | 7 |
+| Préparation d’une transition en attente | 2 |
+| Reset pendant l’attente | 1 |
+| Nouvelle attente complète après reset | 3 |
+| **Total** | **25** |
+
+La simulation et l’inspection du chronogramme ont confirmé les scénarios testés.
+
+Le cas `STABLE_CYCLES = 1`, les autres paramètres et le reset appliqué à une sortie haute restent à tester.
+
+Le module ne contient pas de synchroniseur. Pour une entrée extérieure, la chaîne d’intégration prévue est :
+
+```text
+Entrée extérieure → sync_2ff → debouncer → edge_detector
+```
+
+Ces blocs sont actuellement vérifiés séparément ; leur intégration reste à réaliser.
 
 ## Simulations individuelles
 
@@ -387,6 +427,18 @@ Message attendu : `SYNC_2FF: all 13 checks passed.`
 
 Fin de simulation : `106 ns`.
 
+### Filtre anti-rebond
+
+```bash
+ghdl -a --std=08 rtl/debouncer.vhd tb/tb_debouncer.vhd
+ghdl -e --std=08 tb_debouncer
+ghdl -r --std=08 tb_debouncer --assert-level=error --vcd=debouncer.vcd
+```
+
+Message attendu : `DEBOUNCER: all 25 checks passed.`
+
+Fin de simulation : `246 ns`.
+
 ### Visualiser les chronogrammes
 
 Après génération des fichiers VCD :
@@ -399,6 +451,7 @@ gtkwave counter_en.vcd
 gtkwave clock_enable.vcd
 gtkwave edge_detector.vcd
 gtkwave sync_2ff.vcd
+gtkwave debouncer.vcd
 ```
 
 Les assertions comparent automatiquement les sorties aux valeurs attendues. Les chronogrammes permettent d’examiner les transitions des signaux.
@@ -430,8 +483,9 @@ Cette configuration est indépendante de la compilation GHDL réalisée par le s
 | `clock_enable` | `DIVISOR = 4` | Autres diviseurs non testés |
 | `edge_detector` | Scénarios dirigés sur une entrée synchrone | Transitions entre observations et valeurs non binaires non couvertes |
 | `sync_2ff` | Scénarios logiques dirigés | Métastabilité physique et fiabilité matérielle non évaluées |
+| `debouncer` | `STABLE_CYCLES = 3` | Autres paramètres et reset sur sortie haute non testés |
 
-Les 72 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Leur réussite confirme les scénarios exécutés.
+Les 97 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Leur réussite confirme les scénarios exécutés.
 
 L’arrêt au premier échec du script Python a été contrôlé par injection temporaire d’un résultat attendu incorrect dans le testbench du multiplexeur.
 
@@ -449,8 +503,8 @@ Le dépôt conserve les sources RTL, les testbenches, les scripts et la document
 
 ## Prochaines étapes
 
-- Anti-rebond sur une entrée synchronisée
 - Étendre les tests aux cas limites et à plusieurs paramètres
+- Intégrer la chaîne synchroniseur, anti-rebond et détecteur de front
 - Machines à états
 - FIFO synchrone et UART
 - Vérification structurée avec VUnit ou cocotb
