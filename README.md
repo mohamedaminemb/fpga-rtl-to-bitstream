@@ -8,23 +8,24 @@ Le dépôt rassemble les sources RTL, leurs testbenches auto-vérifiants et une 
 
 ## État actuel
 
-Le projet contient des composants combinatoires et séquentiels, une chaîne de traitement de bouton et une machine à états de détection de séquence.
+Le projet comprend des composants combinatoires et séquentiels, une chaîne de traitement de bouton, un détecteur de séquence et un contrôleur temporisé.
 
-| Module | Description | Configuration testée | Vérifications |
+| Module | Fonction | Configuration testée | Vérifications |
 |---|---|---|---:|
 | `mux21` | Multiplexeur combinatoire 2 vers 1 | Entrées binaires | 8 |
 | `adder_sub` | Additionneur/soustracteur non signé | `N = 8` | 4 |
-| `reg_en` | Registre avec reset synchrone et enable | `WIDTH = 8` | 7 |
-| `counter_en` | Compteur avec reset synchrone et enable | `WIDTH = 3` | 14 |
-| `clock_enable` | Générateur d’autorisation périodique | `DIVISOR = 4` | 16 |
-| `edge_detector` | Détecteur de montée d’un signal échantillonné | Entrée synchrone d’un bit | 10 |
+| `reg_en` | Registre avec reset et enable | `WIDTH = 8` | 7 |
+| `counter_en` | Compteur avec reset et enable | `WIDTH = 3` | 14 |
+| `clock_enable` | Autorisation périodique | `DIVISOR = 4` | 16 |
+| `edge_detector` | Détecteur de montée échantillonnée | Entrée synchrone d’un bit | 10 |
 | `sync_2ff` | Synchroniseur à deux bascules | Entrée d’un bit | 13 |
 | `debouncer` | Filtre anti-rebond | `STABLE_CYCLES = 3` | 25 |
-| `button_conditioner` | Intégration du traitement de bouton | `STABLE_CYCLES = 3` | 88 |
-| `sequence_detector` | FSM de détection de `1011` avec chevauchement | Flux binaire synchrone | 46 |
-| **Total** | **10 testbenches** | | **231** |
+| `button_conditioner` | Traitement complet de bouton | `STABLE_CYCLES = 3` | 88 |
+| `sequence_detector` | Détection de `1011` avec chevauchement | Flux binaire synchrone | 46 |
+| `traffic_light_controller` | FSM de feu tricolore temporisé | Durées `(3,4,2)` et `(1,1,1)` | 68 |
+| **Total** | **11 testbenches** | | **299** |
 
-La régression locale des dix testbenches a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
+La régression locale des onze testbenches a réussi. Le badge indique le résultat du workflow publié sur la branche `main`.
 
 La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
@@ -32,7 +33,7 @@ La synthèse, l’analyse de timing, la génération du bitstream et la validati
 
 - Python 3
 - GHDL avec prise en charge de VHDL-2008
-- GTKWave, facultatif, pour visualiser les chronogrammes
+- GTKWave, facultatif, pour examiner les chronogrammes
 
 Le script utilise uniquement la bibliothèque standard Python.
 
@@ -64,7 +65,8 @@ fpga-rtl-to-bitstream/
 │   ├── sync_2ff.vhd
 │   ├── debouncer.vhd
 │   ├── button_conditioner.vhd
-│   └── sequence_detector.vhd
+│   ├── sequence_detector.vhd
+│   └── traffic_light_controller.vhd
 ├── tb/
 │   ├── tb_mux21.vhd
 │   ├── tb_adder_sub.vhd
@@ -75,7 +77,8 @@ fpga-rtl-to-bitstream/
 │   ├── tb_sync_2ff.vhd
 │   ├── tb_debouncer.vhd
 │   ├── tb_button_conditioner.vhd
-│   └── tb_sequence_detector.vhd
+│   ├── tb_sequence_detector.vhd
+│   └── tb_traffic_light_controller.vhd
 └── scripts/
     └── run_tests.py
 ```
@@ -83,7 +86,7 @@ fpga-rtl-to-bitstream/
 - `rtl/` : descriptions matérielles destinées à la synthèse.
 - `tb/` : bancs de test de simulation.
 - `scripts/` : automatisation de la régression.
-- `.github/workflows/` : configuration de l’intégration continue.
+- `.github/workflows/` : intégration continue.
 - `vhdl_ls.toml` : configuration de l’analyseur VHDL de l’éditeur.
 
 Les dossiers de contraintes et de documentation seront complétés au fil du développement.
@@ -103,7 +106,7 @@ Il s’arrête dès qu’une commande échoue et transmet son code de retour.
 Message final attendu :
 
 ```text
-All 10 testbenches passed.
+All 11 testbenches passed.
 ```
 
 Pour consulter le code de retour immédiatement après l’exécution :
@@ -114,7 +117,7 @@ echo $?
 
 Un code `0` indique la réussite.
 
-Le script doit être exécuté depuis la racine du dépôt. Il ne génère pas de traces VCD. L’ordre des modules respecte les dépendances : les composants sont analysés avant le module d’intégration qui les utilise.
+Le script doit être exécuté depuis la racine du dépôt. Il ne génère pas de traces VCD. Les composants sont analysés avant les modules d’intégration qui les instancient.
 
 ## Intégration continue
 
@@ -125,98 +128,78 @@ Sur une machine GitHub sous Ubuntu 24.04, il :
 1. Récupère le dépôt.
 2. Installe GHDL et Python 3.
 3. Affiche leurs versions.
-4. Exécute `python3 scripts/run_tests.py`.
+4. Exécute la régression Python.
 
 Le workflow dispose d’un accès en lecture au contenu du dépôt et d’une limite d’exécution de 10 minutes.
 
-Les résultats et journaux sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
+Les journaux sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
 
 La CI réalise actuellement la vérification RTL. La synthèse et la validation matérielle restent à intégrer au flot.
 
-## Composants RTL
+## Composants de base
 
-### Multiplexeur — `mux21`
+### `mux21`
 
-Circuit combinatoire :
+Multiplexeur combinatoire : `y = a` lorsque `sel = '0'`, sinon `y = b`.
 
-| `sel` | Sortie |
-|---|---|
-| `'0'` | `y = a` |
-| `'1'` | `y = b` |
+Les huit combinaisons binaires sont vérifiées. Une erreur attendue volontairement incorrecte a également confirmé le fonctionnement des assertions, avant restauration du test.
 
-Les huit combinaisons binaires sont vérifiées. Une modification temporaire d’un résultat attendu a également confirmé la détection d’erreur par assertion.
+### `adder_sub`
 
-### Additionneur/soustracteur — `adder_sub`
+Additionneur/soustracteur non signé de `N` bits, avec `N = 8` par défaut :
 
-Le générique `N` définit la largeur, égale à 8 par défaut.
+- `sub = '0'` : addition.
+- `sub = '1'` : soustraction.
 
-| `sub` | Opération |
-|---|---|
-| `'0'` | Addition |
-| `'1'` | Soustraction |
+Les calculs utilisent `unsigned` et `numeric_std`. Le résultat est conservé sur `N` bits, modulo `2^N`, sans sortie de retenue ni indicateur de dépassement.
 
-Les calculs utilisent `unsigned` et `numeric_std`. Le résultat est limité à `N` bits, modulo `2^N`, sans sortie de retenue ni indicateur de dépassement.
+Les tests vérifient `15 + 10 = 25`, `25 - 10 = 15`, `5 - 10 = 251` et `200 + 100 = 44` sur 8 bits.
 
-Les tests sur 8 bits vérifient :
+### `reg_en`
 
-| Opération | Résultat |
-|---|---:|
-| `15 + 10` | 25 |
-| `25 - 10` | 15 |
-| `5 - 10` | 251 |
-| `200 + 100` | 44 |
+Registre de `WIDTH` bits avec reset synchrone actif à l’état haut, prioritaire sur l’enable.
 
-### Registre — `reg_en`
+Au front montant, il charge l’entrée si `en = '1'`, sinon conserve sa valeur.
 
-Au front montant :
+Les tests couvrent les chargements, le maintien, le reset et sa priorité.
 
-- Si `rst = '1'`, remettre la sortie à zéro.
-- Sinon, si `en = '1'`, charger l’entrée.
-- Sinon, conserver la valeur.
-
-Le générique `WIDTH` vaut 8 par défaut. Le reset est synchrone, actif à l’état haut et prioritaire.
-
-Les sept vérifications couvrent les chargements, le maintien, le reset et sa priorité.
-
-### Compteur — `counter_en`
+### `counter_en`
 
 Compteur non signé de `WIDTH` bits, avec reset synchrone prioritaire et enable.
 
-Le comptage s’effectue modulo `2^WIDTH`. La valeur maximale revient à zéro uniquement lors d’une nouvelle incrémentation.
+Le comptage s’effectue modulo `2^WIDTH`. La valeur maximale revient à zéro lors d’une nouvelle incrémentation.
 
-Les 14 vérifications sur 3 bits couvrent le comptage, le maintien, le débordement et le reset. Le chronogramme a été inspecté.
+Les tests sur 3 bits couvrent le comptage, le maintien, le débordement et le reset. Le chronogramme a été inspecté.
 
-### Générateur de clock enable — `clock_enable`
+### `clock_enable`
 
-Le module produit `tick` pendant un cycle tous les `DIVISOR` cycles. Le paramètre est strictement positif et vaut 4 par défaut.
+Produit une autorisation `tick` pendant un cycle tous les `DIVISOR` cycles.
 
-Après reset, pour `DIVISOR = 4` :
+Pour `DIVISOR = 4`, après reset :
 
 ```text
 Cycle :  1 2 3 4 5 6 7 8
 tick  :  0 0 0 1 0 0 0 1
 ```
 
-Le reset est synchrone et remet le comptage à zéro. `tick` est une autorisation destinée à une logique cadencée par `clk`.
+Le reset synchrone recommence le comptage à zéro. `tick` est destiné à être utilisé comme enable dans une logique cadencée par `clk`.
 
-Les 16 vérifications couvrent la périodicité et le redémarrage après reset.
+### `edge_detector`
 
-### Détecteur de front — `edge_detector`
-
-Le module compare l’entrée synchrone à son échantillon précédent :
+Détecte une montée entre deux échantillons successifs d’une entrée synchrone :
 
 ```text
 rise_pulse suivant = NON previous ET sig_in
 previous suivant   = sig_in
 ```
 
-La sortie est enregistrée au front montant et reste active un cycle par montée détectée.
+La sortie est enregistrée et reste active un cycle par montée détectée.
 
 Le reset remet les deux mémoires à zéro. Une entrée haute au premier front hors reset produit donc une impulsion.
 
-Les dix vérifications couvrent les montées, les descentes, le maintien et le reset. Le chronogramme a été inspecté.
+Les tests couvrent les transitions, le maintien et le reset. Une transition complète entre deux observations peut ne pas être détectée.
 
-### Synchroniseur — `sync_2ff`
+### `sync_2ff`
 
 Deux bascules successives échantillonnent une entrée d’un bit :
 
@@ -233,33 +216,29 @@ sync_out suivant = ancien stage1
 
 Le reset synchrone remet les deux bascules à zéro.
 
-Les 13 vérifications couvrent la propagation des niveaux, le maintien, l’absence de changement entre les fronts et le reset.
-
-Ce module est destiné à un signal de niveau d’un bit suffisamment stable pour être échantillonné. Il ne garantit pas la capture d’impulsions brèves et ne constitue pas une solution générale pour un bus multibit.
+Les tests vérifient la propagation des niveaux, le maintien et le reset. Le module ne garantit pas la capture d’impulsions brèves et ne constitue pas une solution générale pour un bus multibit.
 
 La simulation RTL ne reproduit pas la métastabilité physique. Les attributs FPGA, le placement et les contraintes seront traités lors de l’implémentation.
 
-### Anti-rebond — `debouncer`
+### `debouncer`
 
-Le module accepte une nouvelle valeur après `STABLE_CYCLES` observations consécutives différentes de la sortie actuelle. L’entrée doit être déjà synchronisée.
+Accepte une nouvelle valeur après `STABLE_CYCLES` observations consécutives différentes de la sortie actuelle. L’entrée doit être déjà synchronisée.
 
 - Entrée égale à la sortie : annuler l’attente.
 - Entrée différente : compter les observations.
-- À la dernière observation requise : accepter l’entrée.
+- Dernière observation requise : accepter l’entrée.
 - Reset : remettre sortie et compteur à zéro.
 
-Pour `STABLE_CYCLES = 3` :
+Exemple pour trois observations :
 
 ```text
 Entrée :  1 0 1 1 1 0 1
 Sortie :  0 0 0 0 1 1 1
 ```
 
-Les 25 vérifications couvrent les impulsions courtes, les rebonds en montée et descente, et le reset pendant l’attente. Le chronogramme a été inspecté.
+Les tests couvrent les changements courts, les rebonds en montée et descente, ainsi que le reset pendant l’attente.
 
 ## Intégration du bouton — `button_conditioner`
-
-Le module assemble les composants suivants :
 
 ```text
 button_in → sync_2ff → debouncer → edge_detector → press_pulse
@@ -273,9 +252,7 @@ Les composants partagent la même horloge et le même reset synchrone. Le param�
 - `button_clean` : état synchronisé et filtré.
 - `press_pulse` : impulsion d’un cycle à chaque montée filtrée.
 
-Le détecteur observe la montée de `button_clean` au front suivant : l’impulsion est décalée d’un cycle.
-
-Avec `STABLE_CYCLES = 3`, pour une entrée appliquée au front descendant :
+Le détecteur observe la montée filtrée au front suivant. Pour `STABLE_CYCLES = 3`, dans le scénario d’une entrée appliquée au front descendant :
 
 ```text
 Front        : 1 2 3 4 5 6 7
@@ -283,24 +260,15 @@ button_clean : 0 0 0 0 1 1 1
 press_pulse  : 0 0 0 0 0 1 0
 ```
 
-Les 88 vérifications couvrent le reset initial, deux appuis propres, le maintien prolongé, le relâchement et les rebonds simulés.
+Les 88 vérifications couvrent le reset initial, deux appuis propres, le maintien, le relâchement et les rebonds simulés.
 
-Les rebonds utilisés sont des stimuli numériques simplifiés. Une entrée maintenue haute après reset est interprétée comme un appui une fois synchronisée et filtrée.
+Les rebonds sont des stimuli numériques simplifiés. Une entrée maintenue haute après reset est interprétée comme un appui une fois synchronisée et filtrée.
 
-## Machine à états — `sequence_detector`
+## Détecteur de séquence — `sequence_detector`
 
-Le module reçoit un bit synchrone à chaque front montant et détecte la séquence `1011`, avec chevauchement.
+FSM recevant un bit synchrone à chaque front montant et détectant `1011`, avec chevauchement.
 
-| État | Préfixe reconnu |
-|---|---|
-| `S0` | Aucun préfixe utile |
-| `S1` | `1` |
-| `S10` | `10` |
-| `S101` | `101` |
-
-### Transitions
-
-| État actuel | Bit reçu | État suivant | `detected` suivant |
+| État actuel | Bit reçu | État suivant | Détection |
 |---|---|---|---|
 | `S0` | 0 | `S0` | 0 |
 | `S0` | 1 | `S1` | 0 |
@@ -311,7 +279,7 @@ Le module reçoit un bit synchrone à chaque front montant et détecte la séque
 | `S101` | 0 | `S10` | 0 |
 | `S101` | 1 | `S1` | 1 |
 
-La détection est enregistrée au front montant qui reçoit le dernier bit de la séquence.
+La détection est enregistrée au front recevant le dernier bit du motif.
 
 Après détection, le retour à `S1` conserve le dernier `1` comme début potentiel d’une nouvelle séquence :
 
@@ -320,56 +288,80 @@ Entrée    : 1 0 1 1 0 1 1
 Détection : 0 0 0 1 0 0 1
 ```
 
-Le reset est synchrone, actif à l’état haut. Il remet l’état à `S0` et la sortie à zéro.
+Le reset synchrone remet l’état à `S0` et la sortie à zéro.
+
+Les 46 vérifications couvrent les suites sans détection, les détections simples, les chevauchements, les préfixes incorrects, les suffixes utiles et un reset pendant la réception de `101`.
+
+Le test après reset confirme que l’ancienne reconnaissance partielle est oubliée. Le chronogramme a été inspecté.
+
+## Contrôleur temporisé — `traffic_light_controller`
+
+FSM de Moore commandant trois sorties selon la rotation :
+
+```text
+S_RED → S_GREEN → S_YELLOW → S_RED
+```
+
+Les lampes dépendent uniquement de l’état actuel.
+
+| État | Rouge | Vert | Orange | Durée par défaut |
+|---|---|---|---|---:|
+| `S_RED` | 1 | 0 | 0 | 3 cycles |
+| `S_GREEN` | 0 | 1 | 0 | 4 cycles |
+| `S_YELLOW` | 0 | 0 | 1 | 2 cycles |
+
+Les paramètres `RED_CYCLES`, `GREEN_CYCLES` et `YELLOW_CYCLES` sont strictement positifs.
+
+Un compteur partagé mesure le temps passé dans chaque état. Lorsque sa valeur atteint la durée de l’état moins un, la FSM change d’état et remet le compteur à zéro.
+
+Une fonction calcule la durée maximale pour borner la plage du compteur.
+
+Le reset est synchrone, actif à l’état haut. Il impose le rouge et remet le compteur à zéro.
 
 ### Vérification
 
-Le testbench utilise des procédures pour appliquer les flux, vérifier les résultats et réinitialiser la FSM. Le nombre de vérifications est calculé automatiquement.
+Deux instances fonctionnent en parallèle dans le testbench :
 
-Les 46 vérifications couvrent :
+- Durées normales : `(3, 4, 2)`.
+- Cas limite : `(1, 1, 1)`.
 
-- Une suite de zéros sans détection.
-- Une détection simple et la disparition de l’impulsion.
-- Deux détections avec chevauchement.
-- La conservation d’un suffixe utile après une reconnaissance partielle.
-- Un préfixe incorrect et des uns successifs.
-- Un reset après réception de `101`.
-- Une nouvelle séquence complète après ce reset.
+Les sorties sont comparées dans l’ordre rouge, vert, orange :
 
-Le reset interne est vérifié par le comportement observable : après interruption de `101`, un nouveau `1` ne doit pas compléter l’ancienne séquence.
+```text
+100 → rouge seul
+010 → vert seul
+001 → orange seul
+```
 
-Le chronogramme a confirmé le retour à `S0` au reset et l’absence de détection prématurée après redémarrage.
+Les 68 vérifications couvrent :
+
+- Le reset initial.
+- Plusieurs rotations et les durées attendues.
+- La présence d’une seule lampe active aux instants observés.
+- Un reset activé pendant le vert.
+- L’absence d’effet du reset avant le front montant.
+- Le maintien du reset.
+- Le redémarrage d’une durée complète après reset.
+
+La simulation se termine à `326 ns`. Le chronogramme a été inspecté.
+
+Ces durées sont exprimées en cycles pour la simulation. Leur adaptation à des durées physiques sur carte reste à réaliser. Ce module est un exercice de logique numérique.
 
 ## Simulations individuelles
 
 Exécuter les commandes depuis la racine du dépôt.
 
-### Composants indépendants
+Pour un composant indépendant, analyser son fichier RTL et son testbench, puis élaborer et exécuter l’entité de test.
 
-Pour analyser les composants et leurs testbenches :
-
-```bash
-ghdl -a --std=08 rtl/mux21.vhd tb/tb_mux21.vhd
-ghdl -a --std=08 rtl/adder_sub.vhd tb/tb_adder_sub.vhd
-ghdl -a --std=08 rtl/reg_en.vhd tb/tb_reg_en.vhd
-ghdl -a --std=08 rtl/counter_en.vhd tb/tb_counter_en.vhd
-ghdl -a --std=08 rtl/clock_enable.vhd tb/tb_clock_enable.vhd
-ghdl -a --std=08 rtl/edge_detector.vhd tb/tb_edge_detector.vhd
-ghdl -a --std=08 rtl/sync_2ff.vhd tb/tb_sync_2ff.vhd
-ghdl -a --std=08 rtl/debouncer.vhd tb/tb_debouncer.vhd
-ghdl -a --std=08 rtl/sequence_detector.vhd tb/tb_sequence_detector.vhd
-```
-
-Élaborer et exécuter ensuite le testbench choisi. Exemple pour la FSM :
+Exemple pour le contrôleur temporisé :
 
 ```bash
-ghdl -e --std=08 tb_sequence_detector
-ghdl -r --std=08 tb_sequence_detector --assert-level=error --vcd=sequence_detector.vcd
+ghdl -a --std=08 rtl/traffic_light_controller.vhd tb/tb_traffic_light_controller.vhd
+ghdl -e --std=08 tb_traffic_light_controller
+ghdl -r --std=08 tb_traffic_light_controller --assert-level=error --vcd=traffic_light_controller.vcd
 ```
 
-### Intégration du bouton
-
-Analyser les dépendances avant le module d’intégration :
+Pour l’intégration du bouton, analyser d’abord les dépendances :
 
 ```bash
 ghdl -a --std=08 rtl/sync_2ff.vhd rtl/debouncer.vhd rtl/edge_detector.vhd rtl/button_conditioner.vhd tb/tb_button_conditioner.vhd
@@ -379,7 +371,7 @@ ghdl -r --std=08 tb_button_conditioner --assert-level=error --vcd=button_conditi
 
 ### Résultats attendus
 
-| Testbench | Vérifications | Dernière vérification ou fin de simulation |
+| Testbench | Vérifications | Dernière vérification ou fin |
 |---|---:|---|
 | `tb_mux21` | 8 | 80 ns |
 | `tb_adder_sub` | 4 | 40 ns |
@@ -391,16 +383,17 @@ ghdl -r --std=08 tb_button_conditioner --assert-level=error --vcd=button_conditi
 | `tb_debouncer` | 25 | 246 ns |
 | `tb_button_conditioner` | 88 | 436 ns |
 | `tb_sequence_detector` | 46 | 466 ns |
+| `tb_traffic_light_controller` | 68 | 326 ns |
 
 ### Visualisation
 
 Après génération du fichier VCD :
 
 ```bash
-gtkwave sequence_detector.vcd
+gtkwave traffic_light_controller.vcd
 ```
 
-Pour la FSM, afficher `clk_tb`, `rst_tb`, `bit_in_tb`, `detected_tb` et le signal interne `state_reg`.
+Afficher l’horloge, le reset et les sorties des deux instances. Les états et compteurs internes peuvent également être ajoutés depuis la hiérarchie.
 
 ## Configuration de l’éditeur
 
@@ -420,23 +413,24 @@ Cette configuration est indépendante de la compilation GHDL du script Python.
 
 ## Limites de vérification
 
-Les 231 vérifications sont des comparaisons exécutées dans des scénarios dirigés. Elles ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle.
+Les 299 vérifications sont des comparaisons exécutées dans des scénarios dirigés. Elles ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle.
 
-Les extensions de vérification prévues comprennent :
+Extensions prévues :
 
-- Plusieurs largeurs pour les modules paramétrables.
-- Les cas `DIVISOR = 1` et `STABLE_CYCLES = 1`.
-- Le reset de l’anti-rebond avec sortie haute.
-- Le reset pendant un appui dans le module d’intégration.
-- Des flux supplémentaires et un modèle de référence pour la FSM.
+- Plusieurs largeurs pour les registres, compteurs et modules arithmétiques.
+- Cas `DIVISOR = 1` et `STABLE_CYCLES = 1`.
+- Reset de l’anti-rebond avec sortie haute.
+- Reset pendant un appui dans le module d’intégration.
+- Flux supplémentaires et modèle de référence pour le détecteur de séquence.
+- Autres combinaisons de durées pour le contrôleur temporisé.
 
 Les tests utilisent principalement des valeurs binaires. La métastabilité physique, les délais matériels et la fiabilité sur carte ne sont pas évalués par ces simulations RTL.
 
-L’arrêt au premier échec du script Python a été contrôlé par injection temporaire d’un résultat attendu incorrect dans le testbench du multiplexeur.
+L’arrêt au premier échec de la régression a été contrôlé par injection temporaire d’un résultat attendu incorrect dans le testbench du multiplexeur.
 
 ## Fichiers générés
 
-Les fichiers de travail GHDL et les traces sont générés localement et exclus du dépôt par `.gitignore`, notamment :
+Les fichiers de travail GHDL et les traces sont produits localement et exclus du dépôt par `.gitignore`, notamment :
 
 ```gitignore
 *.cf
@@ -448,9 +442,8 @@ Le dépôt conserve les sources, les testbenches, les scripts et la documentatio
 
 ## Prochaines étapes
 
-- Étendre les tests aux cas limites et à plusieurs paramètres
-- Approfondir les machines à états avec un contrôleur temporisé
 - FIFO synchrone et UART
+- Étendre les tests aux cas limites et à plusieurs paramètres
 - Vérification structurée avec VUnit ou cocotb
 - Intégration d’un système pilotable par UART
 - Synthèse, contraintes et analyse de timing
