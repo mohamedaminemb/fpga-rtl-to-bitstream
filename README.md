@@ -4,11 +4,11 @@
 
 Conception de modules numériques en VHDL et construction progressive d’un flot FPGA, de la vérification RTL à la génération du bitstream.
 
-Le dépôt rassemble les sources RTL, les testbenches auto-vérifiants et une régression Python exécutée localement et automatiquement avec GitHub Actions.
+Le dépôt rassemble les sources RTL, leurs testbenches auto-vérifiants et une régression Python exécutée localement et automatiquement avec GitHub Actions.
 
 ## État actuel
 
-Six modules RTL sont implémentés et vérifiés en simulation.
+Sept modules RTL sont implémentés et vérifiés en simulation.
 
 | Module | Description | Configuration testée | Vérifications |
 |---|---|---|---:|
@@ -18,9 +18,10 @@ Six modules RTL sont implémentés et vérifiés en simulation.
 | `counter_en` | Compteur avec reset synchrone et enable | `WIDTH = 3` | 14 |
 | `clock_enable` | Générateur d’autorisation périodique | `DIVISOR = 4` | 16 |
 | `edge_detector` | Détecteur de montée d’un signal échantillonné | Entrée synchrone d’un bit | 10 |
-| **Total** | **6 testbenches** | | **59** |
+| `sync_2ff` | Synchroniseur à deux bascules | Entrée d’un bit | 13 |
+| **Total** | **7 testbenches** | | **72** |
 
-La régression locale des six testbenches a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
+Les simulations individuelles ont réussi. Le script de régression inclut les sept testbenches. Le badge indique le résultat du workflow publié sur la branche `main`.
 
 La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
@@ -30,7 +31,7 @@ La synthèse, l’analyse de timing, la génération du bitstream et la validati
 - GHDL avec prise en charge de VHDL-2008
 - GTKWave, facultatif, pour visualiser les chronogrammes
 
-Le script de régression utilise uniquement la bibliothèque standard Python.
+Le script utilise uniquement la bibliothèque standard Python.
 
 Environnement de développement : Ubuntu 24.04 LTS, VS Code avec TerosHDL, Git et GitHub.
 
@@ -51,20 +52,23 @@ fpga-rtl-to-bitstream/
 │       └── simulation.yml
 ├── .gitignore
 ├── README.md
+├── vhdl_ls.toml
 ├── rtl/
 │   ├── mux21.vhd
 │   ├── adder_sub.vhd
 │   ├── reg_en.vhd
 │   ├── counter_en.vhd
 │   ├── clock_enable.vhd
-│   └── edge_detector.vhd
+│   ├── edge_detector.vhd
+│   └── sync_2ff.vhd
 ├── tb/
 │   ├── tb_mux21.vhd
 │   ├── tb_adder_sub.vhd
 │   ├── tb_reg_en.vhd
 │   ├── tb_counter_en.vhd
 │   ├── tb_clock_enable.vhd
-│   └── tb_edge_detector.vhd
+│   ├── tb_edge_detector.vhd
+│   └── tb_sync_2ff.vhd
 └── scripts/
     └── run_tests.py
 ```
@@ -73,6 +77,7 @@ fpga-rtl-to-bitstream/
 - `tb/` : bancs de test de simulation.
 - `scripts/` : automatisation de la régression.
 - `.github/workflows/` : configuration de l’intégration continue.
+- `vhdl_ls.toml` : configuration de l’analyseur VHDL de l’éditeur.
 
 Les dossiers de contraintes et de documentation seront complétés au fil du développement.
 
@@ -93,10 +98,10 @@ Pour chaque module, le script :
 
 Il s’arrête dès qu’une commande échoue et transmet son code de retour.
 
-Résultat attendu après réussite des six testbenches :
+Résultat attendu après réussite des sept testbenches :
 
 ```text
-All 6 testbenches passed.
+All 7 testbenches passed.
 ```
 
 Pour consulter le code de retour immédiatement après l’exécution :
@@ -129,7 +134,7 @@ Le workflow possède un accès en lecture au contenu du dépôt et une limite d�
 
 Une erreur de compilation, d’élaboration ou de simulation fait échouer le travail. Les résultats et journaux sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
 
-La CI exécute les tests RTL ; elle ne réalise pas encore la synthèse ou la validation matérielle.
+La CI exécute les tests RTL. La synthèse et la validation matérielle seront ajoutées dans les phases suivantes du projet.
 
 ## Modules RTL
 
@@ -214,7 +219,7 @@ Le générique `DIVISOR` est strictement positif et vaut 4 par défaut. Le compt
 
 Le reset est synchrone et actif à l’état haut. Après sa désactivation, la première impulsion apparaît au `DIVISOR`-ième front montant.
 
-`tick` est destiné à être utilisé comme enable dans une logique cadencée par `clk`, et non comme une nouvelle horloge.
+`tick` est destiné à être utilisé comme enable dans une logique cadencée par `clk`.
 
 Pour `DIVISOR = 4` :
 
@@ -247,26 +252,52 @@ previous suivant   = sig_in
 | `'1'` | `'0'` | `'0'` |
 | `'1'` | `'1'` | `'0'` |
 
-Le reset est synchrone, actif à l’état haut. Il remet `previous` et `rise_pulse` à zéro.
+Le reset est synchrone et actif à l’état haut. Il remet `previous` et `rise_pulse` à zéro.
 
 Si l’entrée est déjà haute au premier front hors reset, une impulsion est produite puisque l’échantillon précédent a été remis à zéro.
 
-Les dix vérifications couvrent :
-
-1. Le reset initial.
-2. Une entrée inactive.
-3. Une première montée.
-4. La disparition de l’impulsion avec une entrée maintenue haute.
-5. Une descente sans impulsion.
-6. Une deuxième montée.
-7. L’absence d’effet immédiat du reset entre les fronts.
-8. L’effacement de l’impulsion au front de reset.
-9. Une entrée haute après désactivation du reset.
-10. La disparition de cette nouvelle impulsion au cycle suivant.
+Les dix vérifications couvrent le reset initial, une entrée inactive, deux montées, une descente, la durée de l’impulsion, le caractère synchrone du reset et le redémarrage avec une entrée haute.
 
 La simulation et l’inspection du chronogramme ont confirmé ces comportements.
 
-L’entrée doit être synchrone avec `clk`. Le module ne contient pas de synchroniseur pour une entrée asynchrone. Une transition complète entre deux observations peut ne pas être détectée.
+L’entrée doit être synchrone avec `clk`. Une transition complète entre deux observations peut ne pas être détectée.
+
+### Synchroniseur à deux bascules — `sync_2ff`
+
+Le module échantillonne une entrée d’un bit à travers deux bascules cadencées par la même horloge.
+
+```text
+async_in → première bascule stage1 → seconde bascule sync_out
+```
+
+Au front montant, hors reset :
+
+```text
+stage1 suivant   = async_in
+sync_out suivant = ancienne valeur de stage1
+```
+
+Une valeur capturée par la première bascule atteint donc la sortie au front montant suivant.
+
+Le reset est synchrone, actif à l’état haut et prioritaire. Il remet les deux bascules à zéro.
+
+Les 13 vérifications portent sur :
+
+- Le reset initial.
+- L’absence de changement de sortie entre les fronts lors d’une montée et d’une descente.
+- La propagation d’une montée à travers les deux bascules.
+- Le maintien d’un niveau haut.
+- La propagation d’une descente.
+- La préparation d’une sortie haute avant reset.
+- Le caractère synchrone du reset.
+- La remise à zéro de la sortie.
+- Le redémarrage sur deux fronts après désactivation du reset.
+
+La simulation individuelle réussit et se termine à `106 ns`.
+
+Le synchroniseur est destiné à un signal de niveau d’un bit qui reste stable suffisamment longtemps pour être échantillonné. Il ne garantit pas la capture d’une impulsion brève et ne constitue pas une solution générale pour un bus multibit.
+
+La simulation RTL vérifie le comportement logique. Elle ne reproduit pas la métastabilité physique et ne prouve pas la fiabilité de la traversée asynchrone. Les attributs propres au FPGA, le placement et les contraintes seront traités lors de l’implémentation.
 
 ## Simulations individuelles
 
@@ -344,6 +375,18 @@ Message attendu : `EDGE_DETECTOR: all 10 checks passed.`
 
 Fin de simulation : `86 ns`.
 
+### Synchroniseur à deux bascules
+
+```bash
+ghdl -a --std=08 rtl/sync_2ff.vhd tb/tb_sync_2ff.vhd
+ghdl -e --std=08 tb_sync_2ff
+ghdl -r --std=08 tb_sync_2ff --assert-level=error --vcd=sync_2ff.vcd
+```
+
+Message attendu : `SYNC_2FF: all 13 checks passed.`
+
+Fin de simulation : `106 ns`.
+
 ### Visualiser les chronogrammes
 
 Après génération des fichiers VCD :
@@ -355,9 +398,26 @@ gtkwave reg_en.vcd
 gtkwave counter_en.vcd
 gtkwave clock_enable.vcd
 gtkwave edge_detector.vcd
+gtkwave sync_2ff.vcd
 ```
 
 Les assertions comparent automatiquement les sorties aux valeurs attendues. Les chronogrammes permettent d’examiner les transitions des signaux.
+
+## Configuration de l’éditeur
+
+Le fichier `vhdl_ls.toml` associe les sources RTL et les testbenches à une bibliothèque commune pour l’analyse dans l’éditeur :
+
+```toml
+standard = "2008"
+
+[libraries]
+defaultlib.files = [
+    "rtl/*.vhd",
+    "tb/*.vhd",
+]
+```
+
+Cette configuration est indépendante de la compilation GHDL réalisée par le script Python.
 
 ## Périmètre et limites de vérification
 
@@ -368,9 +428,10 @@ Les assertions comparent automatiquement les sorties aux valeurs attendues. Les 
 | `reg_en` | `WIDTH = 8` | Autres largeurs non testées |
 | `counter_en` | `WIDTH = 3` | Autres largeurs non testées |
 | `clock_enable` | `DIVISOR = 4` | Autres diviseurs non testés |
-| `edge_detector` | Scénarios dirigés sur une entrée synchrone | Entrée asynchrone et valeurs non binaires non prises en charge par ces tests |
+| `edge_detector` | Scénarios dirigés sur une entrée synchrone | Transitions entre observations et valeurs non binaires non couvertes |
+| `sync_2ff` | Scénarios logiques dirigés | Métastabilité physique et fiabilité matérielle non évaluées |
 
-Les 59 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Leur réussite confirme les scénarios exécutés.
+Les 72 vérifications ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle. Leur réussite confirme les scénarios exécutés.
 
 L’arrêt au premier échec du script Python a été contrôlé par injection temporaire d’un résultat attendu incorrect dans le testbench du multiplexeur.
 
@@ -388,8 +449,8 @@ Le dépôt conserve les sources RTL, les testbenches, les scripts et la document
 
 ## Prochaines étapes
 
+- Anti-rebond sur une entrée synchronisée
 - Étendre les tests aux cas limites et à plusieurs paramètres
-- Synchronisation d’une entrée asynchrone et anti-rebond
 - Machines à états
 - FIFO synchrone et UART
 - Vérification structurée avec VUnit ou cocotb
