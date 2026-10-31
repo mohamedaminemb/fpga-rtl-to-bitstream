@@ -8,8 +8,6 @@ Le dépôt rassemble les sources RTL, leurs testbenches auto-vérifiants et une 
 
 ## État actuel
 
-Le projet comprend des composants combinatoires et séquentiels, une chaîne de traitement de bouton, un détecteur de séquence et un contrôleur temporisé.
-
 | Module | Fonction | Configuration testée | Vérifications |
 |---|---|---|---:|
 | `mux21` | Multiplexeur combinatoire 2 vers 1 | Entrées binaires | 8 |
@@ -23,9 +21,10 @@ Le projet comprend des composants combinatoires et séquentiels, une chaîne de 
 | `button_conditioner` | Traitement complet de bouton | `STABLE_CYCLES = 3` | 88 |
 | `sequence_detector` | Détection de `1011` avec chevauchement | Flux binaire synchrone | 46 |
 | `traffic_light_controller` | FSM de feu tricolore temporisé | Durées `(3,4,2)` et `(1,1,1)` | 68 |
-| **Total** | **11 testbenches** | | **299** |
+| `fifo_sync` | FIFO synchrone à lecture enregistrée | `WIDTH = 8`, `DEPTH = 4` | 93 |
+| **Total** | **12 testbenches** | | **392** |
 
-La régression locale des onze testbenches a réussi. Le badge indique le résultat du workflow publié sur la branche `main`.
+La régression locale des douze testbenches a réussi. Le badge indique le résultat du workflow publié sur la branche `main`.
 
 La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
@@ -66,7 +65,8 @@ fpga-rtl-to-bitstream/
 │   ├── debouncer.vhd
 │   ├── button_conditioner.vhd
 │   ├── sequence_detector.vhd
-│   └── traffic_light_controller.vhd
+│   ├── traffic_light_controller.vhd
+│   └── fifo_sync.vhd
 ├── tb/
 │   ├── tb_mux21.vhd
 │   ├── tb_adder_sub.vhd
@@ -78,7 +78,8 @@ fpga-rtl-to-bitstream/
 │   ├── tb_debouncer.vhd
 │   ├── tb_button_conditioner.vhd
 │   ├── tb_sequence_detector.vhd
-│   └── tb_traffic_light_controller.vhd
+│   ├── tb_traffic_light_controller.vhd
+│   └── tb_fifo_sync.vhd
 └── scripts/
     └── run_tests.py
 ```
@@ -106,7 +107,7 @@ Il s’arrête dès qu’une commande échoue et transmet son code de retour.
 Message final attendu :
 
 ```text
-All 11 testbenches passed.
+All 12 testbenches passed.
 ```
 
 Pour consulter le code de retour immédiatement après l’exécution :
@@ -117,7 +118,7 @@ echo $?
 
 Un code `0` indique la réussite.
 
-Le script doit être exécuté depuis la racine du dépôt. Il ne génère pas de traces VCD. Les composants sont analysés avant les modules d’intégration qui les instancient.
+Le script doit être exécuté depuis la racine du dépôt. Il ne génère pas de traces VCD. Les composants sont analysés avant les modules d’intégration qui les utilisent.
 
 ## Intégration continue
 
@@ -130,7 +131,7 @@ Sur une machine GitHub sous Ubuntu 24.04, il :
 3. Affiche leurs versions.
 4. Exécute la régression Python.
 
-Le workflow dispose d’un accès en lecture au contenu du dépôt et d’une limite d’exécution de 10 minutes.
+Le workflow possède un accès en lecture au contenu du dépôt et une limite d’exécution de 10 minutes.
 
 Les journaux sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
 
@@ -142,18 +143,25 @@ La CI réalise actuellement la vérification RTL. La synthèse et la validation 
 
 Multiplexeur combinatoire : `y = a` lorsque `sel = '0'`, sinon `y = b`.
 
-Les huit combinaisons binaires sont vérifiées. Une erreur attendue volontairement incorrecte a également confirmé le fonctionnement des assertions, avant restauration du test.
+Les huit combinaisons binaires sont vérifiées. Une modification temporaire d’un résultat attendu a également confirmé la détection d’erreur par assertion.
 
 ### `adder_sub`
 
-Additionneur/soustracteur non signé de `N` bits, avec `N = 8` par défaut :
+Additionneur/soustracteur non signé de `N` bits :
 
 - `sub = '0'` : addition.
 - `sub = '1'` : soustraction.
 
 Les calculs utilisent `unsigned` et `numeric_std`. Le résultat est conservé sur `N` bits, modulo `2^N`, sans sortie de retenue ni indicateur de dépassement.
 
-Les tests vérifient `15 + 10 = 25`, `25 - 10 = 15`, `5 - 10 = 251` et `200 + 100 = 44` sur 8 bits.
+Les tests sur 8 bits vérifient :
+
+| Opération | Résultat |
+|---|---:|
+| `15 + 10` | 25 |
+| `25 - 10` | 15 |
+| `5 - 10` | 251 |
+| `200 + 100` | 44 |
 
 ### `reg_en`
 
@@ -161,7 +169,7 @@ Registre de `WIDTH` bits avec reset synchrone actif à l’état haut, prioritai
 
 Au front montant, il charge l’entrée si `en = '1'`, sinon conserve sa valeur.
 
-Les tests couvrent les chargements, le maintien, le reset et sa priorité.
+Les tests couvrent les chargements, le maintien et le comportement du reset.
 
 ### `counter_en`
 
@@ -169,7 +177,7 @@ Compteur non signé de `WIDTH` bits, avec reset synchrone prioritaire et enable.
 
 Le comptage s’effectue modulo `2^WIDTH`. La valeur maximale revient à zéro lors d’une nouvelle incrémentation.
 
-Les tests sur 3 bits couvrent le comptage, le maintien, le débordement et le reset. Le chronogramme a été inspecté.
+Les tests sur 3 bits couvrent le comptage, le maintien, le débordement et le reset.
 
 ### `clock_enable`
 
@@ -197,7 +205,7 @@ La sortie est enregistrée et reste active un cycle par montée détectée.
 
 Le reset remet les deux mémoires à zéro. Une entrée haute au premier front hors reset produit donc une impulsion.
 
-Les tests couvrent les transitions, le maintien et le reset. Une transition complète entre deux observations peut ne pas être détectée.
+Une transition complète entre deux observations peut ne pas être détectée.
 
 ### `sync_2ff`
 
@@ -216,7 +224,7 @@ sync_out suivant = ancien stage1
 
 Le reset synchrone remet les deux bascules à zéro.
 
-Les tests vérifient la propagation des niveaux, le maintien et le reset. Le module ne garantit pas la capture d’impulsions brèves et ne constitue pas une solution générale pour un bus multibit.
+Le module ne garantit pas la capture d’impulsions brèves et ne constitue pas une solution générale pour un bus multibit.
 
 La simulation RTL ne reproduit pas la métastabilité physique. Les attributs FPGA, le placement et les contraintes seront traités lors de l’implémentation.
 
@@ -236,7 +244,7 @@ Entrée :  1 0 1 1 1 0 1
 Sortie :  0 0 0 0 1 1 1
 ```
 
-Les tests couvrent les changements courts, les rebonds en montée et descente, ainsi que le reset pendant l’attente.
+Les tests couvrent les changements courts, les rebonds en montée et descente, et le reset pendant l’attente.
 
 ## Intégration du bouton — `button_conditioner`
 
@@ -281,7 +289,7 @@ FSM recevant un bit synchrone à chaque front montant et détectant `1011`, avec
 
 La détection est enregistrée au front recevant le dernier bit du motif.
 
-Après détection, le retour à `S1` conserve le dernier `1` comme début potentiel d’une nouvelle séquence :
+Le retour à `S1` après détection conserve le dernier `1` comme début potentiel d’une nouvelle séquence :
 
 ```text
 Entrée    : 1 0 1 1 0 1 1
@@ -290,19 +298,15 @@ Détection : 0 0 0 1 0 0 1
 
 Le reset synchrone remet l’état à `S0` et la sortie à zéro.
 
-Les 46 vérifications couvrent les suites sans détection, les détections simples, les chevauchements, les préfixes incorrects, les suffixes utiles et un reset pendant la réception de `101`.
-
-Le test après reset confirme que l’ancienne reconnaissance partielle est oubliée. Le chronogramme a été inspecté.
+Les 46 vérifications couvrent les détections simples, les chevauchements, les préfixes incorrects, les suffixes utiles et un reset pendant la réception de `101`.
 
 ## Contrôleur temporisé — `traffic_light_controller`
 
-FSM de Moore commandant trois sorties selon la rotation :
+FSM de Moore commandant la rotation :
 
 ```text
 S_RED → S_GREEN → S_YELLOW → S_RED
 ```
-
-Les lampes dépendent uniquement de l’état actuel.
 
 | État | Rouge | Vert | Orange | Durée par défaut |
 |---|---|---|---|---:|
@@ -310,42 +314,83 @@ Les lampes dépendent uniquement de l’état actuel.
 | `S_GREEN` | 0 | 1 | 0 | 4 cycles |
 | `S_YELLOW` | 0 | 0 | 1 | 2 cycles |
 
-Les paramètres `RED_CYCLES`, `GREEN_CYCLES` et `YELLOW_CYCLES` sont strictement positifs.
+Les durées sont des paramètres strictement positifs. Un compteur partagé mesure la durée de l’état et revient à zéro à chaque transition.
 
-Un compteur partagé mesure le temps passé dans chaque état. Lorsque sa valeur atteint la durée de l’état moins un, la FSM change d’état et remet le compteur à zéro.
+Le reset synchrone impose le rouge et remet le compteur à zéro.
 
-Une fonction calcule la durée maximale pour borner la plage du compteur.
+Le testbench utilise deux configurations en parallèle : `(3,4,2)` et `(1,1,1)`.
 
-Le reset est synchrone, actif à l’état haut. Il impose le rouge et remet le compteur à zéro.
+Les 68 vérifications couvrent les rotations, les durées, les sorties attendues, le reset en fonctionnement, son maintien et le redémarrage.
+
+Les durées sont exprimées en cycles pour la simulation. Leur adaptation à des secondes sur carte reste à réaliser.
+
+## FIFO synchrone — `fifo_sync`
+
+File de données respectant l’ordre **First In, First Out** : la première donnée écrite est la première donnée lue.
+
+### Interface
+
+| Élément | Rôle |
+|---|---|
+| `WIDTH` | Nombre de bits par donnée |
+| `DEPTH` | Nombre maximal de données stockées |
+| `clk` | Horloge commune aux lectures et écritures |
+| `rst` | Reset synchrone actif à l’état haut |
+| `wr_en` | Demande d’écriture |
+| `rd_en` | Demande de lecture |
+| `data_in` | Donnée à écrire |
+| `data_out` | Dernière donnée lue, sortie enregistrée |
+| `full` | Occupation égale à `DEPTH` |
+| `empty` | Occupation égale à zéro |
+
+Le module utilise un tableau mémoire, deux pointeurs circulaires et un compteur d’occupation.
+
+La sortie `data_out` est mise à jour après une lecture acceptée au front montant. Sans lecture acceptée, elle conserve sa valeur, y compris lorsque la FIFO est vide.
+
+### Politique d’acceptation
+
+Les demandes sont acceptées selon l’occupation avant le front montant :
+
+```text
+Écriture acceptée = wr_en actif ET FIFO non pleine
+Lecture acceptée  = rd_en actif ET FIFO non vide
+```
+
+Pour deux demandes simultanées :
+
+| Occupation avant le front | Écriture | Lecture | Occupation après |
+|---|---|---|---|
+| Vide | Acceptée | Refusée | 1 |
+| Intermédiaire | Acceptée | Acceptée | Inchangée |
+| Pleine | Refusée | Acceptée | `DEPTH - 1` |
+
+Cette version ne réalise pas de lecture directe de la donnée entrante lorsque la FIFO est vide. Elle refuse une écriture lorsque la FIFO était pleine, même si une lecture est acceptée au même front.
+
+### Reset
+
+Le reset est prioritaire sur les demandes. Il remet les pointeurs, l’occupation et la sortie à zéro.
+
+Le tableau mémoire n’est pas effacé : ses anciennes données deviennent logiquement invalides et les lectures sont refusées tant que la FIFO reste vide.
 
 ### Vérification
 
-Deux instances fonctionnent en parallèle dans le testbench :
+Les 93 vérifications sont réalisées avec `WIDTH = 8` et `DEPTH = 4`.
 
-- Durées normales : `(3, 4, 2)`.
-- Cas limite : `(1, 1, 1)`.
+Elles couvrent :
 
-Les sorties sont comparées dans l’ordre rouge, vert, orange :
-
-```text
-100 → rouge seul
-010 → vert seul
-001 → orange seul
-```
-
-Les 68 vérifications couvrent :
-
-- Le reset initial.
-- Plusieurs rotations et les durées attendues.
-- La présence d’une seule lampe active aux instants observés.
-- Un reset activé pendant le vert.
-- L’absence d’effet du reset avant le front montant.
+- L’ordre des données.
+- Le maintien de la sortie sans lecture acceptée.
+- La lecture à vide.
+- Le remplissage et le refus d’écriture lorsque la FIFO est pleine.
+- Le retour des pointeurs à zéro.
+- Les lectures et écritures simultanées, aux limites et à occupation intermédiaire.
+- Le maintien sans opération.
+- Le reset synchrone d’une FIFO pleine avec demandes actives.
 - Le maintien du reset.
-- Le redémarrage d’une durée complète après reset.
+- L’inaccessibilité des anciennes données après reset.
+- Une nouvelle écriture suivie d’une lecture après reset.
 
-La simulation se termine à `326 ns`. Le chronogramme a été inspecté.
-
-Ces durées sont exprimées en cycles pour la simulation. Leur adaptation à des durées physiques sur carte reste à réaliser. Ce module est un exercice de logique numérique.
+Le chronogramme a également été inspecté. Les autres largeurs et profondeurs restent à tester.
 
 ## Simulations individuelles
 
@@ -353,15 +398,15 @@ Exécuter les commandes depuis la racine du dépôt.
 
 Pour un composant indépendant, analyser son fichier RTL et son testbench, puis élaborer et exécuter l’entité de test.
 
-Exemple pour le contrôleur temporisé :
+Exemple pour la FIFO :
 
 ```bash
-ghdl -a --std=08 rtl/traffic_light_controller.vhd tb/tb_traffic_light_controller.vhd
-ghdl -e --std=08 tb_traffic_light_controller
-ghdl -r --std=08 tb_traffic_light_controller --assert-level=error --vcd=traffic_light_controller.vcd
+ghdl -a --std=08 rtl/fifo_sync.vhd tb/tb_fifo_sync.vhd
+ghdl -e --std=08 tb_fifo_sync
+ghdl -r --std=08 tb_fifo_sync --assert-level=error --vcd=fifo_sync.vcd
 ```
 
-Pour l’intégration du bouton, analyser d’abord les dépendances :
+Pour l’intégration du bouton, analyser d’abord ses dépendances :
 
 ```bash
 ghdl -a --std=08 rtl/sync_2ff.vhd rtl/debouncer.vhd rtl/edge_detector.vhd rtl/button_conditioner.vhd tb/tb_button_conditioner.vhd
@@ -384,20 +429,21 @@ ghdl -r --std=08 tb_button_conditioner --assert-level=error --vcd=button_conditi
 | `tb_button_conditioner` | 88 | 436 ns |
 | `tb_sequence_detector` | 46 | 466 ns |
 | `tb_traffic_light_controller` | 68 | 326 ns |
+| `tb_fifo_sync` | 93 | 296 ns |
 
 ### Visualisation
 
 Après génération du fichier VCD :
 
 ```bash
-gtkwave traffic_light_controller.vcd
+gtkwave fifo_sync.vcd
 ```
 
-Afficher l’horloge, le reset et les sorties des deux instances. Les états et compteurs internes peuvent également être ajoutés depuis la hiérarchie.
+Pour la FIFO, afficher les demandes, les données, les indicateurs et, dans l’instance `uut`, les pointeurs et le compteur d’occupation.
 
 ## Configuration de l’éditeur
 
-Le fichier `vhdl_ls.toml` associe les sources et les testbenches à une bibliothèque commune :
+Le fichier `vhdl_ls.toml` associe les sources et testbenches à une bibliothèque commune :
 
 ```toml
 standard = "2008"
@@ -413,15 +459,16 @@ Cette configuration est indépendante de la compilation GHDL du script Python.
 
 ## Limites de vérification
 
-Les 299 vérifications sont des comparaisons exécutées dans des scénarios dirigés. Elles ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle.
+Les 392 vérifications sont des comparaisons exécutées dans des scénarios dirigés. Elles ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle.
 
 Extensions prévues :
 
-- Plusieurs largeurs pour les registres, compteurs et modules arithmétiques.
+- Plusieurs largeurs pour les modules paramétrables.
+- Plusieurs profondeurs de FIFO, notamment 1 et une profondeur non puissance de deux.
 - Cas `DIVISOR = 1` et `STABLE_CYCLES = 1`.
 - Reset de l’anti-rebond avec sortie haute.
 - Reset pendant un appui dans le module d’intégration.
-- Flux supplémentaires et modèle de référence pour le détecteur de séquence.
+- Modèles de référence et scénarios aléatoires.
 - Autres combinaisons de durées pour le contrôleur temporisé.
 
 Les tests utilisent principalement des valeurs binaires. La métastabilité physique, les délais matériels et la fiabilité sur carte ne sont pas évalués par ces simulations RTL.
@@ -430,7 +477,7 @@ L’arrêt au premier échec de la régression a été contrôlé par injection 
 
 ## Fichiers générés
 
-Les fichiers de travail GHDL et les traces sont produits localement et exclus du dépôt par `.gitignore`, notamment :
+Les fichiers de travail GHDL et les traces sont générés localement et exclus du dépôt par `.gitignore`, notamment :
 
 ```gitignore
 *.cf
@@ -442,7 +489,7 @@ Le dépôt conserve les sources, les testbenches, les scripts et la documentatio
 
 ## Prochaines étapes
 
-- FIFO synchrone et UART
+- UART TX puis UART RX
 - Étendre les tests aux cas limites et à plusieurs paramètres
 - Vérification structurée avec VUnit ou cocotb
 - Intégration d’un système pilotable par UART
