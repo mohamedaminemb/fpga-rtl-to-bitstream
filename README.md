@@ -22,11 +22,12 @@ Le dépôt rassemble les sources RTL, leurs testbenches auto-vérifiants et une 
 | `sequence_detector` | Détection de `1011` avec chevauchement | Flux binaire synchrone | 46 |
 | `traffic_light_controller` | FSM de feu tricolore temporisé | Durées `(3,4,2)` et `(1,1,1)` | 68 |
 | `fifo_sync` | FIFO synchrone à lecture enregistrée | `WIDTH = 8`, `DEPTH = 4` | 93 |
-| **Total** | **12 testbenches** | | **392** |
+| `uart_tx` | Émetteur UART 8N1 | `CLKS_PER_BIT = 4` | 180 |
+| **Total** | **13 testbenches** | | **572** |
 
-La régression locale des douze testbenches a réussi. Le badge indique le résultat du workflow publié sur la branche `main`.
+La régression locale des treize testbenches a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
 
-La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
+La réception UART, la synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
 ## Prérequis
 
@@ -66,7 +67,8 @@ fpga-rtl-to-bitstream/
 │   ├── button_conditioner.vhd
 │   ├── sequence_detector.vhd
 │   ├── traffic_light_controller.vhd
-│   └── fifo_sync.vhd
+│   ├── fifo_sync.vhd
+│   └── uart_tx.vhd
 ├── tb/
 │   ├── tb_mux21.vhd
 │   ├── tb_adder_sub.vhd
@@ -79,7 +81,8 @@ fpga-rtl-to-bitstream/
 │   ├── tb_button_conditioner.vhd
 │   ├── tb_sequence_detector.vhd
 │   ├── tb_traffic_light_controller.vhd
-│   └── tb_fifo_sync.vhd
+│   ├── tb_fifo_sync.vhd
+│   └── tb_uart_tx.vhd
 └── scripts/
     └── run_tests.py
 ```
@@ -107,7 +110,7 @@ Il s’arrête dès qu’une commande échoue et transmet son code de retour.
 Message final attendu :
 
 ```text
-All 12 testbenches passed.
+All 13 testbenches passed.
 ```
 
 Pour consulter le code de retour immédiatement après l’exécution :
@@ -177,7 +180,7 @@ Compteur non signé de `WIDTH` bits, avec reset synchrone prioritaire et enable.
 
 Le comptage s’effectue modulo `2^WIDTH`. La valeur maximale revient à zéro lors d’une nouvelle incrémentation.
 
-Les tests sur 3 bits couvrent le comptage, le maintien, le débordement et le reset.
+Les tests couvrent le comptage, le maintien, le débordement et le reset.
 
 ### `clock_enable`
 
@@ -201,11 +204,9 @@ rise_pulse suivant = NON previous ET sig_in
 previous suivant   = sig_in
 ```
 
-La sortie est enregistrée et reste active un cycle par montée détectée.
+La sortie est enregistrée. Le reset remet les deux mémoires à zéro.
 
-Le reset remet les deux mémoires à zéro. Une entrée haute au premier front hors reset produit donc une impulsion.
-
-Une transition complète entre deux observations peut ne pas être détectée.
+Une entrée haute au premier front hors reset produit une impulsion. Une transition complète entre deux observations peut ne pas être détectée.
 
 ### `sync_2ff`
 
@@ -237,7 +238,7 @@ Accepte une nouvelle valeur après `STABLE_CYCLES` observations consécutives di
 - Dernière observation requise : accepter l’entrée.
 - Reset : remettre sortie et compteur à zéro.
 
-Exemple pour trois observations :
+Pour trois observations :
 
 ```text
 Entrée :  1 0 1 1 1 0 1
@@ -246,7 +247,7 @@ Sortie :  0 0 0 0 1 1 1
 
 Les tests couvrent les changements courts, les rebonds en montée et descente, et le reset pendant l’attente.
 
-## Intégration du bouton — `button_conditioner`
+## Traitement du bouton — `button_conditioner`
 
 ```text
 button_in → sync_2ff → debouncer → edge_detector → press_pulse
@@ -256,10 +257,6 @@ button_in → sync_2ff → debouncer → edge_detector → press_pulse
 
 Les composants partagent la même horloge et le même reset synchrone. Le paramètre `STABLE_CYCLES` est transmis à l’anti-rebond.
 
-- `button_in` : entrée extérieure active à l’état haut.
-- `button_clean` : état synchronisé et filtré.
-- `press_pulse` : impulsion d’un cycle à chaque montée filtrée.
-
 Le détecteur observe la montée filtrée au front suivant. Pour `STABLE_CYCLES = 3`, dans le scénario d’une entrée appliquée au front descendant :
 
 ```text
@@ -268,9 +265,9 @@ button_clean : 0 0 0 0 1 1 1
 press_pulse  : 0 0 0 0 0 1 0
 ```
 
-Les 88 vérifications couvrent le reset initial, deux appuis propres, le maintien, le relâchement et les rebonds simulés.
+Les tests couvrent les appuis propres, le maintien, le relâchement et les rebonds simulés.
 
-Les rebonds sont des stimuli numériques simplifiés. Une entrée maintenue haute après reset est interprétée comme un appui une fois synchronisée et filtrée.
+Une entrée maintenue haute après reset est interprétée comme un appui une fois synchronisée et filtrée.
 
 ## Détecteur de séquence — `sequence_detector`
 
@@ -287,18 +284,14 @@ FSM recevant un bit synchrone à chaque front montant et détectant `1011`, avec
 | `S101` | 0 | `S10` | 0 |
 | `S101` | 1 | `S1` | 1 |
 
-La détection est enregistrée au front recevant le dernier bit du motif.
-
-Le retour à `S1` après détection conserve le dernier `1` comme début potentiel d’une nouvelle séquence :
+La détection est enregistrée au front recevant le dernier bit du motif. Le retour à `S1` conserve le dernier `1` pour une éventuelle détection chevauchante.
 
 ```text
 Entrée    : 1 0 1 1 0 1 1
 Détection : 0 0 0 1 0 0 1
 ```
 
-Le reset synchrone remet l’état à `S0` et la sortie à zéro.
-
-Les 46 vérifications couvrent les détections simples, les chevauchements, les préfixes incorrects, les suffixes utiles et un reset pendant la réception de `101`.
+Les tests couvrent les détections, les séquences incorrectes, les suffixes utiles et un reset pendant une reconnaissance partielle.
 
 ## Contrôleur temporisé — `traffic_light_controller`
 
@@ -314,99 +307,121 @@ S_RED → S_GREEN → S_YELLOW → S_RED
 | `S_GREEN` | 0 | 1 | 0 | 4 cycles |
 | `S_YELLOW` | 0 | 0 | 1 | 2 cycles |
 
-Les durées sont des paramètres strictement positifs. Un compteur partagé mesure la durée de l’état et revient à zéro à chaque transition.
+Un compteur partagé mesure la durée de chaque état et revient à zéro à chaque transition.
 
 Le reset synchrone impose le rouge et remet le compteur à zéro.
 
-Le testbench utilise deux configurations en parallèle : `(3,4,2)` et `(1,1,1)`.
+Les configurations `(3,4,2)` et `(1,1,1)` sont testées en parallèle. Les vérifications couvrent les durées, les rotations, les sorties et le reset en fonctionnement.
 
-Les 68 vérifications couvrent les rotations, les durées, les sorties attendues, le reset en fonctionnement, son maintien et le redémarrage.
-
-Les durées sont exprimées en cycles pour la simulation. Leur adaptation à des secondes sur carte reste à réaliser.
+Les durées sont exprimées en cycles pour la simulation.
 
 ## FIFO synchrone — `fifo_sync`
 
-File de données respectant l’ordre **First In, First Out** : la première donnée écrite est la première donnée lue.
+File respectant l’ordre First In, First Out.
+
+| Élément | Rôle |
+|---|---|
+| `WIDTH` | Nombre de bits par donnée |
+| `DEPTH` | Capacité en nombre de données |
+| `wr_en`, `rd_en` | Demandes d’écriture et de lecture |
+| `data_in` | Donnée à écrire |
+| `data_out` | Dernière donnée lue, sortie enregistrée |
+| `full`, `empty` | Indicateurs d’occupation |
+
+Les demandes sont acceptées selon l’occupation avant le front montant.
+
+| État avant deux demandes simultanées | Écriture | Lecture |
+|---|---|---|
+| Vide | Acceptée | Refusée |
+| Occupation intermédiaire | Acceptée | Acceptée |
+| Pleine | Refusée | Acceptée |
+
+Sans lecture acceptée, `data_out` conserve sa valeur.
+
+Le reset synchrone est prioritaire. Il remet les pointeurs, l’occupation et la sortie à zéro sans effacer le tableau mémoire.
+
+Les 93 vérifications couvrent l’ordre des données, les limites pleine/vide, les pointeurs circulaires, les opérations simultanées et le reset d’une FIFO pleine avec demandes actives.
+
+## Émetteur UART — `uart_tx`
+
+Émetteur série au format **8N1** :
+
+```text
+Repos | Start | b0 b1 b2 b3 b4 b5 b6 b7 | Stop
+  1   |   0   |    Données, LSB d'abord   |  1
+```
 
 ### Interface
 
 | Élément | Rôle |
 |---|---|
-| `WIDTH` | Nombre de bits par donnée |
-| `DEPTH` | Nombre maximal de données stockées |
-| `clk` | Horloge commune aux lectures et écritures |
+| `CLKS_PER_BIT` | Nombre de cycles d’horloge par bit |
+| `clk` | Horloge |
 | `rst` | Reset synchrone actif à l’état haut |
-| `wr_en` | Demande d’écriture |
-| `rd_en` | Demande de lecture |
-| `data_in` | Donnée à écrire |
-| `data_out` | Dernière donnée lue, sortie enregistrée |
-| `full` | Occupation égale à `DEPTH` |
-| `empty` | Occupation égale à zéro |
+| `start` | Demande d’envoi |
+| `data_in` | Octet à transmettre |
+| `tx` | Ligne série enregistrée |
+| `busy` | Transmission en cours |
+| `done` | Impulsion d’un cycle après la fin du stop |
 
-Le module utilise un tableau mémoire, deux pointeurs circulaires et un compteur d’occupation.
+La FSM comporte quatre états : `IDLE`, `START_BIT`, `DATA_BITS` et `STOP_BIT`.
 
-La sortie `data_out` est mise à jour après une lecture acceptée au front montant. Sans lecture acceptée, elle conserve sa valeur, y compris lorsque la FIFO est vide.
+### Contrat de transmission
 
-### Politique d’acceptation
+Une demande est acceptée uniquement dans `IDLE`. L’octet est alors copié dans un registre interne.
 
-Les demandes sont acceptées selon l’occupation avant le front montant :
+Chaque bit dure `CLKS_PER_BIT` périodes d’horloge. `busy` reste actif pendant le start, les données et le stop.
+
+À la fin de la durée complète du stop, `busy` est désactivé et `done` est activé pendant un cycle.
+
+Les demandes présentées uniquement pendant la transmission sont ignorées. Si `start` reste haut jusqu’au retour dans `IDLE`, il peut déclencher un nouvel envoi.
+
+Le reset interrompt la transmission et remet `tx = '1'`, `busy = '0'` et `done = '0'`.
+
+### Temporisation
 
 ```text
-Écriture acceptée = wr_en actif ET FIFO non pleine
-Lecture acceptée  = rd_en actif ET FIFO non vide
+Durée d’un bit = CLKS_PER_BIT × période de clk
+Durée d’une trame 8N1 = 10 × durée d’un bit
+Baudrate = fréquence de clk / CLKS_PER_BIT
 ```
 
-Pour deux demandes simultanées :
+Avec une période de 10 ns et `CLKS_PER_BIT = 4`, un bit dure 40 ns et une trame dure 400 ns.
 
-| Occupation avant le front | Écriture | Lecture | Occupation après |
-|---|---|---|---|
-| Vide | Acceptée | Refusée | 1 |
-| Intermédiaire | Acceptée | Acceptée | Inchangée |
-| Pleine | Refusée | Acceptée | `DEPTH - 1` |
-
-Cette version ne réalise pas de lecture directe de la donnée entrante lorsque la FIFO est vide. Elle refuse une écriture lorsque la FIFO était pleine, même si une lecture est acceptée au même front.
-
-### Reset
-
-Le reset est prioritaire sur les demandes. Il remet les pointeurs, l’occupation et la sortie à zéro.
-
-Le tableau mémoire n’est pas effacé : ses anciennes données deviennent logiquement invalides et les lectures sont refusées tant que la FIFO reste vide.
+Ce réglage sert à accélérer les simulations. Le choix d’un baudrate réel et son erreur d’arrondi seront traités lors de l’intégration.
 
 ### Vérification
 
-Les 93 vérifications sont réalisées avec `WIDTH = 8` et `DEPTH = 4`.
+Les 180 vérifications contrôlent :
 
-Elles couvrent :
+- Le reset initial.
+- Une trame complète de `0xA6`, cycle par cycle.
+- L’ordre des bits et leur durée.
+- `busy` et `done`.
+- La conservation de l’octet malgré un changement de `data_in`.
+- Une demande ignorée pendant `busy`.
+- L’absence de transmission différée pour cette demande.
+- Une transmission de `0x00` interrompue pendant les données.
+- Le reset synchrone et sa priorité sur `start`.
+- Le maintien du reset et l’absence de reprise automatique.
 
-- L’ordre des données.
-- Le maintien de la sortie sans lecture acceptée.
-- La lecture à vide.
-- Le remplissage et le refus d’écriture lorsque la FIFO est pleine.
-- Le retour des pointeurs à zéro.
-- Les lectures et écritures simultanées, aux limites et à occupation intermédiaire.
-- Le maintien sans opération.
-- Le reset synchrone d’une FIFO pleine avec demandes actives.
-- Le maintien du reset.
-- L’inaccessibilité des anciennes données après reset.
-- Une nouvelle écriture suivie d’une lecture après reset.
-
-Le chronogramme a également été inspecté. Les autres largeurs et profondeurs restent à tester.
+Le chronogramme a été inspecté. Les autres octets, les autres valeurs de `CLKS_PER_BIT`, le reset pendant le start ou le stop et une nouvelle transmission après reset restent à tester.
 
 ## Simulations individuelles
 
 Exécuter les commandes depuis la racine du dépôt.
 
-Pour un composant indépendant, analyser son fichier RTL et son testbench, puis élaborer et exécuter l’entité de test.
-
-Exemple pour la FIFO :
+Exemple pour l’UART TX :
 
 ```bash
-ghdl -a --std=08 rtl/fifo_sync.vhd tb/tb_fifo_sync.vhd
-ghdl -e --std=08 tb_fifo_sync
-ghdl -r --std=08 tb_fifo_sync --assert-level=error --vcd=fifo_sync.vcd
+ghdl -a --std=08 rtl/uart_tx.vhd tb/tb_uart_tx.vhd
+ghdl -e --std=08 tb_uart_tx
+ghdl -r --std=08 tb_uart_tx --assert-level=error --vcd=uart_tx.vcd
 ```
 
-Pour l’intégration du bouton, analyser d’abord ses dépendances :
+Pour un autre composant indépendant, remplacer les noms du module et du testbench.
+
+Pour l’intégration du bouton, analyser d’abord les dépendances :
 
 ```bash
 ghdl -a --std=08 rtl/sync_2ff.vhd rtl/debouncer.vhd rtl/edge_detector.vhd rtl/button_conditioner.vhd tb/tb_button_conditioner.vhd
@@ -430,16 +445,13 @@ ghdl -r --std=08 tb_button_conditioner --assert-level=error --vcd=button_conditi
 | `tb_sequence_detector` | 46 | 466 ns |
 | `tb_traffic_light_controller` | 68 | 326 ns |
 | `tb_fifo_sync` | 93 | 296 ns |
+| `tb_uart_tx` | 180 | 586 ns |
 
-### Visualisation
-
-Après génération du fichier VCD :
+Après génération d’une trace :
 
 ```bash
-gtkwave fifo_sync.vcd
+gtkwave uart_tx.vcd
 ```
-
-Pour la FIFO, afficher les demandes, les données, les indicateurs et, dans l’instance `uut`, les pointeurs et le compteur d’occupation.
 
 ## Configuration de l’éditeur
 
@@ -459,17 +471,9 @@ Cette configuration est indépendante de la compilation GHDL du script Python.
 
 ## Limites de vérification
 
-Les 392 vérifications sont des comparaisons exécutées dans des scénarios dirigés. Elles ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle.
+Les 572 vérifications sont des comparaisons exécutées dans des scénarios dirigés. Elles ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle.
 
-Extensions prévues :
-
-- Plusieurs largeurs pour les modules paramétrables.
-- Plusieurs profondeurs de FIFO, notamment 1 et une profondeur non puissance de deux.
-- Cas `DIVISOR = 1` et `STABLE_CYCLES = 1`.
-- Reset de l’anti-rebond avec sortie haute.
-- Reset pendant un appui dans le module d’intégration.
-- Modèles de référence et scénarios aléatoires.
-- Autres combinaisons de durées pour le contrôleur temporisé.
+Les extensions prévues comprennent plusieurs paramètres, des cas limites, des modèles de référence et des scénarios aléatoires.
 
 Les tests utilisent principalement des valeurs binaires. La métastabilité physique, les délais matériels et la fiabilité sur carte ne sont pas évalués par ces simulations RTL.
 
@@ -477,7 +481,7 @@ L’arrêt au premier échec de la régression a été contrôlé par injection 
 
 ## Fichiers générés
 
-Les fichiers de travail GHDL et les traces sont générés localement et exclus du dépôt par `.gitignore`, notamment :
+Les fichiers de travail GHDL et les traces sont produits localement et exclus du dépôt par `.gitignore`, notamment :
 
 ```gitignore
 *.cf
@@ -489,9 +493,11 @@ Le dépôt conserve les sources, les testbenches, les scripts et la documentatio
 
 ## Prochaines étapes
 
-- UART TX puis UART RX
-- Étendre les tests aux cas limites et à plusieurs paramètres
+- UART RX
+- Bouclage TX vers RX et vérification des octets reçus
+- Extension des tests aux cas limites et à plusieurs paramètres
 - Vérification structurée avec VUnit ou cocotb
-- Intégration d’un système pilotable par UART
+- Intégration FIFO et UART
+- Système pilotable par commandes UART
 - Synthèse, contraintes et analyse de timing
 - Génération du bitstream et validation sur carte FPGA
