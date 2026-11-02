@@ -23,11 +23,12 @@ Le dépôt rassemble les sources RTL, leurs testbenches auto-vérifiants et une 
 | `traffic_light_controller` | FSM de feu tricolore temporisé | Durées `(3,4,2)` et `(1,1,1)` | 68 |
 | `fifo_sync` | FIFO synchrone à lecture enregistrée | `WIDTH = 8`, `DEPTH = 4` | 93 |
 | `uart_tx` | Émetteur UART 8N1 | `CLKS_PER_BIT = 4` | 180 |
-| **Total** | **13 testbenches** | | **572** |
+| `uart_rx` | Récepteur UART 8N1 | `CLKS_PER_BIT = 8` | 26 |
+| **Total** | **14 testbenches** | | **598** |
 
-La régression locale des treize testbenches a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
+La régression locale des quatorze testbenches a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
 
-La réception UART, la synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
+Le bouclage UART, la synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
 ## Prérequis
 
@@ -68,7 +69,8 @@ fpga-rtl-to-bitstream/
 │   ├── sequence_detector.vhd
 │   ├── traffic_light_controller.vhd
 │   ├── fifo_sync.vhd
-│   └── uart_tx.vhd
+│   ├── uart_tx.vhd
+│   └── uart_rx.vhd
 ├── tb/
 │   ├── tb_mux21.vhd
 │   ├── tb_adder_sub.vhd
@@ -82,7 +84,8 @@ fpga-rtl-to-bitstream/
 │   ├── tb_sequence_detector.vhd
 │   ├── tb_traffic_light_controller.vhd
 │   ├── tb_fifo_sync.vhd
-│   └── tb_uart_tx.vhd
+│   ├── tb_uart_tx.vhd
+│   └── tb_uart_rx.vhd
 └── scripts/
     └── run_tests.py
 ```
@@ -92,8 +95,6 @@ fpga-rtl-to-bitstream/
 - `scripts/` : automatisation de la régression.
 - `.github/workflows/` : intégration continue.
 - `vhdl_ls.toml` : configuration de l’analyseur VHDL de l’éditeur.
-
-Les dossiers de contraintes et de documentation seront complétés au fil du développement.
 
 ## Lancer la régression
 
@@ -110,7 +111,7 @@ Il s’arrête dès qu’une commande échoue et transmet son code de retour.
 Message final attendu :
 
 ```text
-All 13 testbenches passed.
+All 14 testbenches passed.
 ```
 
 Pour consulter le code de retour immédiatement après l’exécution :
@@ -157,14 +158,7 @@ Additionneur/soustracteur non signé de `N` bits :
 
 Les calculs utilisent `unsigned` et `numeric_std`. Le résultat est conservé sur `N` bits, modulo `2^N`, sans sortie de retenue ni indicateur de dépassement.
 
-Les tests sur 8 bits vérifient :
-
-| Opération | Résultat |
-|---|---:|
-| `15 + 10` | 25 |
-| `25 - 10` | 15 |
-| `5 - 10` | 251 |
-| `200 + 100` | 44 |
+Les tests sur 8 bits vérifient les opérations `15 + 10`, `25 - 10`, `5 - 10` et `200 + 100`, avec les résultats attendus `25`, `15`, `251` et `44`.
 
 ### `reg_en`
 
@@ -172,15 +166,11 @@ Registre de `WIDTH` bits avec reset synchrone actif à l’état haut, prioritai
 
 Au front montant, il charge l’entrée si `en = '1'`, sinon conserve sa valeur.
 
-Les tests couvrent les chargements, le maintien et le comportement du reset.
-
 ### `counter_en`
 
 Compteur non signé de `WIDTH` bits, avec reset synchrone prioritaire et enable.
 
 Le comptage s’effectue modulo `2^WIDTH`. La valeur maximale revient à zéro lors d’une nouvelle incrémentation.
-
-Les tests couvrent le comptage, le maintien, le débordement et le reset.
 
 ### `clock_enable`
 
@@ -245,8 +235,6 @@ Entrée :  1 0 1 1 1 0 1
 Sortie :  0 0 0 0 1 1 1
 ```
 
-Les tests couvrent les changements courts, les rebonds en montée et descente, et le reset pendant l’attente.
-
 ## Traitement du bouton — `button_conditioner`
 
 ```text
@@ -257,15 +245,7 @@ button_in → sync_2ff → debouncer → edge_detector → press_pulse
 
 Les composants partagent la même horloge et le même reset synchrone. Le paramètre `STABLE_CYCLES` est transmis à l’anti-rebond.
 
-Le détecteur observe la montée filtrée au front suivant. Pour `STABLE_CYCLES = 3`, dans le scénario d’une entrée appliquée au front descendant :
-
-```text
-Front        : 1 2 3 4 5 6 7
-button_clean : 0 0 0 0 1 1 1
-press_pulse  : 0 0 0 0 0 1 0
-```
-
-Les tests couvrent les appuis propres, le maintien, le relâchement et les rebonds simulés.
+Le détecteur observe la montée filtrée au front suivant. Les tests couvrent les appuis propres, le maintien, le relâchement et les rebonds simulés.
 
 Une entrée maintenue haute après reset est interprétée comme un appui une fois synchronisée et filtrée.
 
@@ -273,33 +253,20 @@ Une entrée maintenue haute après reset est interprétée comme un appui une fo
 
 FSM recevant un bit synchrone à chaque front montant et détectant `1011`, avec chevauchement.
 
-| État actuel | Bit reçu | État suivant | Détection |
-|---|---|---|---|
-| `S0` | 0 | `S0` | 0 |
-| `S0` | 1 | `S1` | 0 |
-| `S1` | 0 | `S10` | 0 |
-| `S1` | 1 | `S1` | 0 |
-| `S10` | 0 | `S0` | 0 |
-| `S10` | 1 | `S101` | 0 |
-| `S101` | 0 | `S10` | 0 |
-| `S101` | 1 | `S1` | 1 |
-
-La détection est enregistrée au front recevant le dernier bit du motif. Le retour à `S1` conserve le dernier `1` pour une éventuelle détection chevauchante.
+Les états mémorisent les préfixes utiles : aucun préfixe, `1`, `10` et `101`.
 
 ```text
 Entrée    : 1 0 1 1 0 1 1
 Détection : 0 0 0 1 0 0 1
 ```
 
-Les tests couvrent les détections, les séquences incorrectes, les suffixes utiles et un reset pendant une reconnaissance partielle.
+La détection est enregistrée au front recevant le dernier bit du motif. Le retour à l’état correspondant à `1` permet le chevauchement.
+
+Les tests couvrent les détections, les séquences incorrectes, les suffixes utiles et le reset pendant une reconnaissance partielle.
 
 ## Contrôleur temporisé — `traffic_light_controller`
 
-FSM de Moore commandant la rotation :
-
-```text
-S_RED → S_GREEN → S_YELLOW → S_RED
-```
+FSM de Moore commandant la rotation rouge, vert, orange.
 
 | État | Rouge | Vert | Orange | Durée par défaut |
 |---|---|---|---|---:|
@@ -311,24 +278,15 @@ Un compteur partagé mesure la durée de chaque état et revient à zéro à cha
 
 Le reset synchrone impose le rouge et remet le compteur à zéro.
 
-Les configurations `(3,4,2)` et `(1,1,1)` sont testées en parallèle. Les vérifications couvrent les durées, les rotations, les sorties et le reset en fonctionnement.
-
-Les durées sont exprimées en cycles pour la simulation.
+Les configurations `(3,4,2)` et `(1,1,1)` sont testées en parallèle. Les durées sont exprimées en cycles pour la simulation.
 
 ## FIFO synchrone — `fifo_sync`
 
-File respectant l’ordre First In, First Out.
+File respectant l’ordre First In, First Out, paramétrable en largeur et profondeur.
 
-| Élément | Rôle |
-|---|---|
-| `WIDTH` | Nombre de bits par donnée |
-| `DEPTH` | Capacité en nombre de données |
-| `wr_en`, `rd_en` | Demandes d’écriture et de lecture |
-| `data_in` | Donnée à écrire |
-| `data_out` | Dernière donnée lue, sortie enregistrée |
-| `full`, `empty` | Indicateurs d’occupation |
+La lecture est enregistrée. Sans lecture acceptée, `data_out` conserve sa valeur.
 
-Les demandes sont acceptées selon l’occupation avant le front montant.
+Les demandes sont acceptées selon l’occupation avant le front montant :
 
 | État avant deux demandes simultanées | Écriture | Lecture |
 |---|---|---|
@@ -336,92 +294,124 @@ Les demandes sont acceptées selon l’occupation avant le front montant.
 | Occupation intermédiaire | Acceptée | Acceptée |
 | Pleine | Refusée | Acceptée |
 
-Sans lecture acceptée, `data_out` conserve sa valeur.
+Le reset synchrone remet les pointeurs, l’occupation et la sortie à zéro sans effacer le tableau mémoire.
 
-Le reset synchrone est prioritaire. Il remet les pointeurs, l’occupation et la sortie à zéro sans effacer le tableau mémoire.
-
-Les 93 vérifications couvrent l’ordre des données, les limites pleine/vide, les pointeurs circulaires, les opérations simultanées et le reset d’une FIFO pleine avec demandes actives.
+Les tests couvrent l’ordre des données, les limites pleine/vide, les pointeurs circulaires, les opérations simultanées et le reset d’une FIFO pleine avec demandes actives.
 
 ## Émetteur UART — `uart_tx`
 
-Émetteur série au format **8N1** :
+Émetteur série au format 8N1 :
 
 ```text
 Repos | Start | b0 b1 b2 b3 b4 b5 b6 b7 | Stop
-  1   |   0   |    Données, LSB d'abord   |  1
+  1   |   0   |       LSB d’abord        |  1
 ```
+
+### Interface et comportement
+
+- `CLKS_PER_BIT` : nombre de cycles par bit.
+- `start` : demande acceptée uniquement dans `IDLE`.
+- `data_in` : octet copié lors de l’acceptation.
+- `tx` : ligne série enregistrée.
+- `busy` : actif pendant toute la trame.
+- `done` : impulsion d’un cycle après la durée complète du stop.
+
+Les demandes présentées uniquement pendant la transmission sont ignorées. Une demande maintenue jusqu’au retour dans `IDLE` peut déclencher un nouvel envoi.
+
+Le reset synchrone interrompt la trame et remet la ligne au repos.
+
+### Vérification
+
+Les tests contrôlent une trame complète de `0xA6`, la durée des bits, la copie de l’octet, les demandes pendant `busy`, l’impulsion `done` et une transmission de `0x00` interrompue par reset.
+
+Les autres octets, paramètres et positions d’interruption restent à tester.
+
+## Récepteur UART — `uart_rx`
+
+Récepteur série 8N1 avec synchronisation d’entrée et échantillonnage près du milieu des bits.
 
 ### Interface
 
 | Élément | Rôle |
 |---|---|
-| `CLKS_PER_BIT` | Nombre de cycles d’horloge par bit |
-| `clk` | Horloge |
+| `CLKS_PER_BIT` | Nombre de cycles par bit |
+| `rx` | Entrée série extérieure |
+| `data_out` | Dernier octet reçu avec stop valide |
+| `valid` | Impulsion d’un cycle lors d’une réception valide |
+| `frame_error` | Impulsion d’un cycle si le stop est incorrect |
 | `rst` | Reset synchrone actif à l’état haut |
-| `start` | Demande d’envoi |
-| `data_in` | Octet à transmettre |
-| `tx` | Ligne série enregistrée |
-| `busy` | Transmission en cours |
-| `done` | Impulsion d’un cycle après la fin du stop |
 
-La FSM comporte quatre états : `IDLE`, `START_BIT`, `DATA_BITS` et `STOP_BIT`.
+Cette implémentation exige un `CLKS_PER_BIT` pair, supérieur ou égal à 4. Une assertion vérifie cette contrainte.
 
-### Contrat de transmission
+### Fonctionnement
 
-Une demande est acceptée uniquement dans `IDLE`. L’octet est alors copié dans un registre interne.
+Deux bascules synchronisent l’entrée et sont remises à un au reset, conformément au niveau de repos UART.
 
-Chaque bit dure `CLKS_PER_BIT` périodes d’horloge. `busy` reste actif pendant le start, les données et le stop.
+La FSM comporte cinq états :
 
-À la fin de la durée complète du stop, `busy` est désactivé et `done` est activé pendant un cycle.
+| État | Action |
+|---|---|
+| `IDLE` | Rechercher un début de start |
+| `START_BIT` | Vérifier le niveau bas près du milieu du start |
+| `DATA_BITS` | Échantillonner les huit bits, LSB d’abord |
+| `STOP_BIT` | Vérifier le stop et publier le résultat |
+| `WAIT_IDLE` | Attendre un retour au niveau haut après une erreur |
 
-Les demandes présentées uniquement pendant la transmission sont ignorées. Si `start` reste haut jusqu’au retour dans `IDLE`, il peut déclencher un nouvel envoi.
+Un faux start est ignoré sans publier de donnée ni d’erreur de stop.
 
-Le reset interrompt la transmission et remet `tx = '1'`, `busy = '0'` et `done = '0'`.
+Si le stop vaut un, l’octet est publié avec `valid`. Sinon, `frame_error` est activé et `data_out` conserve le dernier octet valide.
 
-### Temporisation
+La réception est annoncée au contrôle du milieu du stop ; le RX n’attend pas sa fin complète.
+
+### Récupération après erreur
+
+Le test de réception après erreur a révélé qu’un retour direct dans `IDLE` pouvait interpréter la fin d’un stop incorrect comme un nouveau start.
+
+L’état `WAIT_IDLE` empêche cette nouvelle détection tant que l’entrée synchronisée reste basse.
+
+### Vérification indépendante
+
+Le testbench génère directement la ligne série, sans utiliser `uart_tx`. Le début des trames est décalé par rapport à l’horloge du récepteur.
+
+Les 26 vérifications couvrent :
+
+- Le reset initial.
+- Une réception valide de `0xA6`.
+- La durée de l’impulsion `valid`.
+- Un faux start bref.
+- Une trame `0x53` avec stop incorrect.
+- La conservation du dernier octet valide.
+- Le comptage de l’erreur.
+- Une nouvelle réception valide après l’erreur, sans reset.
+
+Le bilan attendu est de deux octets valides et une erreur de trame. Le chronogramme a été inspecté.
+
+## Paramétrage du lien UART
 
 ```text
 Durée d’un bit = CLKS_PER_BIT × période de clk
-Durée d’une trame 8N1 = 10 × durée d’un bit
 Baudrate = fréquence de clk / CLKS_PER_BIT
 ```
 
-Avec une période de 10 ns et `CLKS_PER_BIT = 4`, un bit dure 40 ns et une trame dure 400 ns.
+Les tests individuels TX et RX utilisent des paramètres différents et sont indépendants.
 
-Ce réglage sert à accélérer les simulations. Le choix d’un baudrate réel et son erreur d’arrondi seront traités lors de l’intégration.
+Pour les connecter, leurs durées de bit doivent correspondre. Avec la même horloge, ils doivent utiliser la même valeur de `CLKS_PER_BIT`.
 
-### Vérification
-
-Les 180 vérifications contrôlent :
-
-- Le reset initial.
-- Une trame complète de `0xA6`, cycle par cycle.
-- L’ordre des bits et leur durée.
-- `busy` et `done`.
-- La conservation de l’octet malgré un changement de `data_in`.
-- Une demande ignorée pendant `busy`.
-- L’absence de transmission différée pour cette demande.
-- Une transmission de `0x00` interrompue pendant les données.
-- Le reset synchrone et sa priorité sur `start`.
-- Le maintien du reset et l’absence de reprise automatique.
-
-Le chronogramme a été inspecté. Les autres octets, les autres valeurs de `CLKS_PER_BIT`, le reset pendant le start ou le stop et une nouvelle transmission après reset restent à tester.
+Le bouclage prévu utilisera initialement `CLKS_PER_BIT = 8` pour les deux modules.
 
 ## Simulations individuelles
 
-Exécuter les commandes depuis la racine du dépôt.
-
-Exemple pour l’UART TX :
+Depuis la racine du dépôt :
 
 ```bash
-ghdl -a --std=08 rtl/uart_tx.vhd tb/tb_uart_tx.vhd
-ghdl -e --std=08 tb_uart_tx
-ghdl -r --std=08 tb_uart_tx --assert-level=error --vcd=uart_tx.vcd
+ghdl -a --std=08 rtl/uart_rx.vhd tb/tb_uart_rx.vhd
+ghdl -e --std=08 tb_uart_rx
+ghdl -r --std=08 tb_uart_rx --assert-level=error --vcd=uart_rx.vcd
 ```
 
 Pour un autre composant indépendant, remplacer les noms du module et du testbench.
 
-Pour l’intégration du bouton, analyser d’abord les dépendances :
+Pour l’intégration du bouton, analyser ses dépendances avant le module parent :
 
 ```bash
 ghdl -a --std=08 rtl/sync_2ff.vhd rtl/debouncer.vhd rtl/edge_detector.vhd rtl/button_conditioner.vhd tb/tb_button_conditioner.vhd
@@ -446,11 +436,12 @@ ghdl -r --std=08 tb_button_conditioner --assert-level=error --vcd=button_conditi
 | `tb_traffic_light_controller` | 68 | 326 ns |
 | `tb_fifo_sync` | 93 | 296 ns |
 | `tb_uart_tx` | 180 | 586 ns |
+| `tb_uart_rx` | 26 | 2807 ns |
 
 Après génération d’une trace :
 
 ```bash
-gtkwave uart_tx.vcd
+gtkwave uart_rx.vcd
 ```
 
 ## Configuration de l’éditeur
@@ -471,9 +462,17 @@ Cette configuration est indépendante de la compilation GHDL du script Python.
 
 ## Limites de vérification
 
-Les 572 vérifications sont des comparaisons exécutées dans des scénarios dirigés. Elles ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle.
+Les 598 vérifications sont des comparaisons exécutées dans des scénarios dirigés. Elles ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle.
 
-Les extensions prévues comprennent plusieurs paramètres, des cas limites, des modèles de référence et des scénarios aléatoires.
+Extensions prévues :
+
+- Plusieurs paramètres pour les composants génériques.
+- FIFO de profondeur 1 et de profondeur non puissance de deux.
+- Cas limites des générateurs et filtres.
+- Autres octets et réceptions UART consécutives.
+- Autres phases de départ et écarts de baudrate.
+- Reset du RX pendant une réception.
+- Modèles de référence et scénarios aléatoires.
 
 Les tests utilisent principalement des valeurs binaires. La métastabilité physique, les délais matériels et la fiabilité sur carte ne sont pas évalués par ces simulations RTL.
 
@@ -493,8 +492,8 @@ Le dépôt conserve les sources, les testbenches, les scripts et la documentatio
 
 ## Prochaines étapes
 
-- UART RX
-- Bouclage TX vers RX et vérification des octets reçus
+- Bouclage UART TX vers RX
+- Vérification de 256 octets pseudo-aléatoires
 - Extension des tests aux cas limites et à plusieurs paramètres
 - Vérification structurée avec VUnit ou cocotb
 - Intégration FIFO et UART

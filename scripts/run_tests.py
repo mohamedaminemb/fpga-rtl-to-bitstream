@@ -22,6 +22,7 @@ tests = [
     ("traffic_light_controller", "tb_traffic_light_controller"),
     ("fifo_sync", "tb_fifo_sync"),
     ("uart_tx", "tb_uart_tx"),
+    ("uart_rx", "tb_uart_rx"),
 ]
 
 for module, testbench in tests:
