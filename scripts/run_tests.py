@@ -23,14 +23,27 @@ tests = [
     ("fifo_sync", "tb_fifo_sync"),
     ("uart_tx", "tb_uart_tx"),
     ("uart_rx", "tb_uart_rx"),
+    ("uart_loopback", "tb_uart_loopback"),
 ]
+
+source_overrides = {
+    "uart_loopback": [
+        "rtl/uart_tx.vhd",
+        "rtl/uart_rx.vhd",
+    ],
+}
 
 for module, testbench in tests:
     print(f"Testing {module}...", flush=True)
 
+    sources = source_overrides.get(
+        module,
+        [f"rtl/{module}.vhd"],
+    )
+
     run_command([
         "ghdl", "-a", "--std=08",
-        f"rtl/{module}.vhd",
+        *sources,
         f"tb/{testbench}.vhd",
     ])
 
