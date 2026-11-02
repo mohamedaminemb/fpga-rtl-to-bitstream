@@ -24,12 +24,19 @@ tests = [
     ("uart_tx", "tb_uart_tx"),
     ("uart_rx", "tb_uart_rx"),
     ("uart_loopback", "tb_uart_loopback"),
+    ("alu", "tb_alu"),
 ]
 
 source_overrides = {
     "uart_loopback": [
         "rtl/uart_tx.vhd",
         "rtl/uart_rx.vhd",
+    ],
+}
+simulation_options = {
+    "alu": [
+        [],                    
+        ["-gWIDTH_TB=1"],
     ],
 }
 
@@ -51,8 +58,13 @@ for module, testbench in tests:
         "ghdl", "-e", "--std=08", testbench,
     ])
 
+    for options in simulation_options.get(module, [[]]):
+        configuration = " ".join(options) or "default"
+        print(f"  Configuration: {configuration}", flush=True)
+
     run_command([
         "ghdl", "-r", "--std=08", testbench,
+        *options,
         "--assert-level=error",
     ])
 

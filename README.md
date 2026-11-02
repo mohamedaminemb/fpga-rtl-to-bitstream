@@ -4,15 +4,17 @@
 
 Conception de modules numériques en VHDL et construction progressive d’un flot FPGA, de la vérification RTL à la génération du bitstream.
 
-Le dépôt rassemble les sources RTL, les testbenches auto-vérifiants et une régression Python exécutée localement et automatiquement avec GitHub Actions.
+Le dépôt rassemble les sources RTL, leurs testbenches auto-vérifiants et une régression Python exécutée localement et automatiquement avec GitHub Actions.
 
 ## État actuel
 
-Le projet contient **14 modules RTL et 15 testbenches**.
+- **15 modules RTL**
+- **16 testbenches**
+- **17 configurations de simulation**, dont deux largeurs pour l’ALU
+- **4 758 vérifications des composants**
+- **256 octets pseudo-aléatoires vérifiés en bouclage UART**
 
-Les tests des composants regroupent **598 vérifications dirigées**. Un test d’intégration supplémentaire vérifie la transmission et la réception de **256 octets pseudo-aléatoires en bouclage UART**.
-
-| Module | Fonction | Configuration testée | Vérifications dirigées |
+| Module | Fonction | Configuration testée | Vérifications |
 |---|---|---|---:|
 | `mux21` | Multiplexeur combinatoire | Entrées binaires | 8 |
 | `adder_sub` | Additionneur/soustracteur non signé | `N = 8` | 4 |
@@ -28,12 +30,11 @@ Les tests des composants regroupent **598 vérifications dirigées**. Un test d�
 | `fifo_sync` | FIFO à lecture enregistrée | `WIDTH = 8`, `DEPTH = 4` | 93 |
 | `uart_tx` | Émetteur UART 8N1 | `CLKS_PER_BIT = 4` | 180 |
 | `uart_rx` | Récepteur UART 8N1 | `CLKS_PER_BIT = 8` | 26 |
+| `alu` | Unité arithmétique et logique | `WIDTH = 4` et `WIDTH = 1` | 4 160 |
 
-| Test d’intégration | Configuration | Résultat |
-|---|---|---|
-| `tb_uart_loopback` | TX et RX avec `CLKS_PER_BIT = 8` | 256 octets pseudo-aléatoires correctement reçus |
+Le testbench `tb_uart_loopback` complète ces tests avec 256 transmissions et réceptions comparées automatiquement.
 
-La régression locale des quinze testbenches a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
+La régression locale a réussi avec un code de retour égal à `0`. Le badge indique le résultat du workflow publié sur la branche `main`.
 
 La synthèse, l’analyse de timing, la génération du bitstream et la validation sur carte restent à réaliser.
 
@@ -77,7 +78,8 @@ fpga-rtl-to-bitstream/
 │   ├── traffic_light_controller.vhd
 │   ├── fifo_sync.vhd
 │   ├── uart_tx.vhd
-│   └── uart_rx.vhd
+│   ├── uart_rx.vhd
+│   └── alu.vhd
 ├── tb/
 │   ├── tb_mux21.vhd
 │   ├── tb_adder_sub.vhd
@@ -93,7 +95,8 @@ fpga-rtl-to-bitstream/
 │   ├── tb_fifo_sync.vhd
 │   ├── tb_uart_tx.vhd
 │   ├── tb_uart_rx.vhd
-│   └── tb_uart_loopback.vhd
+│   ├── tb_uart_loopback.vhd
+│   └── tb_alu.vhd
 └── scripts/
     └── run_tests.py
 ```
@@ -108,14 +111,14 @@ Depuis la racine du dépôt :
 python3 scripts/run_tests.py
 ```
 
-Pour chaque testbench, le script analyse les sources, élabore l’entité de test et lance la simulation avec `--assert-level=error`.
+Le script analyse les sources, élabore les testbenches et exécute les simulations avec `--assert-level=error`.
 
-Il s’arrête dès qu’une commande échoue et transmet son code de retour.
+Il s’arrête au premier échec et transmet le code de retour de la commande concernée.
 
 Message final attendu :
 
 ```text
-All 15 testbenches passed.
+All 16 testbenches passed.
 ```
 
 Pour consulter le code de retour immédiatement après l’exécution :
@@ -126,9 +129,15 @@ echo $?
 
 Un code `0` indique la réussite.
 
-Le script doit être exécuté depuis la racine du dépôt. Il ne génère pas de traces VCD.
+### Gestion des configurations
 
-Les dépendances sont analysées avant les modules qui les instancient. Le dictionnaire `source_overrides` indique les sources particulières du test de bouclage UART.
+- `tests` associe les modules à leurs testbenches.
+- `source_overrides` précise les sources particulières du bouclage UART.
+- `simulation_options` définit les configurations supplémentaires, notamment `WIDTH_TB = 1` pour l’ALU.
+
+L’ALU est simulée deux fois : la régression comprend donc 17 exécutions pour 16 testbenches.
+
+Le script doit être exécuté depuis la racine du dépôt. Il ne génère pas de traces VCD.
 
 ## Intégration continue
 
@@ -161,7 +170,7 @@ Additionneur/soustracteur non signé de `N` bits utilisant `numeric_std`.
 
 Le résultat est conservé sur `N` bits, modulo `2^N`, sans sortie de retenue ni indicateur de dépassement.
 
-Les tests sur 8 bits vérifient les additions, les soustractions et le comportement modulo 256.
+Les tests sur 8 bits couvrent des additions, des soustractions et le comportement modulo 256.
 
 ### `reg_en`
 
@@ -185,7 +194,7 @@ Cycle :  1 2 3 4 5 6 7 8
 tick  :  0 0 0 1 0 0 0 1
 ```
 
-La sortie est destinée à être utilisée comme enable dans une logique cadencée par la même horloge.
+La sortie est utilisée comme enable dans une logique cadencée par la même horloge.
 
 ### `edge_detector`
 
@@ -196,7 +205,7 @@ rise_pulse suivant = NON previous ET sig_in
 previous suivant   = sig_in
 ```
 
-La sortie est enregistrée. Une entrée haute au premier front hors reset produit une impulsion, car le reset initialise l’échantillon précédent à zéro.
+La sortie est enregistrée. Une entrée haute au premier front hors reset produit une impulsion, car l’échantillon précédent est initialisé à zéro.
 
 ### `sync_2ff`
 
@@ -228,7 +237,7 @@ button_in → sync_2ff → debouncer → edge_detector → press_pulse
 
 Les composants partagent la même horloge et le même reset synchrone.
 
-Le détecteur observe la montée filtrée au front suivant. Les tests couvrent les appuis, le maintien, le relâchement et les rebonds numériques simulés.
+Les tests couvrent les appuis, le maintien, le relâchement et les rebonds numériques simulés.
 
 Une entrée maintenue haute après reset est interprétée comme un appui une fois synchronisée et filtrée.
 
@@ -271,7 +280,7 @@ Les demandes sont acceptées selon l’occupation avant le front :
 
 Le reset remet les pointeurs, l’occupation et la sortie à zéro sans effacer le tableau mémoire.
 
-Les tests couvrent l’ordre, les limites pleine/vide, le retour des pointeurs, les opérations simultanées et le reset avec demandes actives.
+Les tests couvrent l’ordre, les limites pleine/vide, les pointeurs circulaires, les opérations simultanées et le reset avec demandes actives.
 
 ## Émetteur UART — `uart_tx`
 
@@ -282,21 +291,21 @@ Repos | Start | b0 b1 b2 b3 b4 b5 b6 b7 | Stop
   1   |   0   |       LSB d’abord        |  1
 ```
 
-Une demande `start` est acceptée uniquement dans `IDLE`. L’octet est alors copié dans un registre interne.
+Une demande `start` est acceptée uniquement dans `IDLE`. L’octet est copié lors de l’acceptation.
 
 Chaque bit dure `CLKS_PER_BIT` périodes. `busy` reste actif pendant toute la trame et `done` produit une impulsion après la durée complète du stop.
 
-Les demandes présentées uniquement pendant la transmission sont ignorées. Une demande maintenue jusqu’au retour dans `IDLE` peut déclencher un nouvel envoi.
+Une demande présentée uniquement pendant la transmission est ignorée.
 
 Le reset synchrone interrompt la trame et remet la ligne au repos.
 
-Les tests individuels couvrent une trame de `0xA6`, les durées, la copie de l’octet, les demandes pendant `busy` et une interruption par reset.
+Les tests individuels couvrent le contenu, les durées, la copie de l’octet, les demandes pendant `busy` et une interruption par reset.
 
 ## Récepteur UART — `uart_rx`
 
-Récepteur 8N1 avec synchronisation d’entrée à deux bascules et échantillonnage près du milieu des bits.
+Récepteur 8N1 avec synchronisation à deux bascules et échantillonnage près du milieu des bits.
 
-Cette implémentation exige un `CLKS_PER_BIT` pair, supérieur ou égal à 4. Une assertion vérifie cette contrainte.
+Cette implémentation exige un `CLKS_PER_BIT` pair, supérieur ou égal à 4.
 
 | État | Action |
 |---|---|
@@ -308,27 +317,13 @@ Cette implémentation exige un `CLKS_PER_BIT` pair, supérieur ou égal à 4. Un
 
 Un faux start est ignoré.
 
-Si le stop est valide, l’octet est publié sur `data_out` avec une impulsion `valid`. Sinon, `frame_error` est activé et la dernière donnée valide est conservée.
+Si le stop est valide, l’octet est publié avec une impulsion `valid`. Sinon, `frame_error` est activé et la dernière donnée valide est conservée.
 
-La réception est annoncée au contrôle du milieu du stop.
+Le test de récupération a révélé qu’un retour direct dans `IDLE` après erreur pouvait interpréter la fin du mauvais stop comme un nouveau start. L’état `WAIT_IDLE` corrige ce comportement.
 
-### Défaut détecté et corrigé
-
-Le test de récupération a révélé qu’un retour direct dans `IDLE` après un stop incorrect pouvait interpréter sa fin comme un nouveau start.
-
-L’état `WAIT_IDLE` attend maintenant le retour au niveau haut avant de rechercher une nouvelle trame.
-
-### Vérification indépendante
-
-Le testbench RX génère directement le signal série, indépendamment du TX.
-
-Il vérifie une trame valide, un faux start, un stop incorrect, la conservation de la donnée et une nouvelle réception après erreur.
-
-Le bilan attendu est de deux octets valides et une erreur de trame.
+Le testbench indépendant vérifie une trame valide, un faux start, un stop incorrect et une nouvelle réception après erreur.
 
 ## Bouclage UART — `tb_uart_loopback`
-
-Le testbench connecte directement les deux modules :
 
 ```text
 Octet attendu → uart_tx → ligne série → uart_rx → Comparaison
@@ -336,23 +331,15 @@ Octet attendu → uart_tx → ligne série → uart_rx → Comparaison
 
 TX et RX utilisent la même horloge et `CLKS_PER_BIT = 8`.
 
-Le test :
+Le test vérifie 256 octets pseudo-aléatoires, générés par un LFSR de 16 bits avec une graine fixe `0xACE1`.
 
-1. Génère un octet pseudo-aléatoire.
-2. Demande son émission.
-3. Observe la réception et la fin d’émission.
-4. Compare l’octet reçu à l’octet attendu.
-5. Répète l’opération pour 256 octets.
+Le moniteur contrôle les données, les impulsions et les compteurs de transmission/réception. Toute erreur de trame interrompt le test.
 
-Le moniteur vérifie les données et les impulsions `valid` et `done`. Les compteurs détectent les réceptions ou transmissions manquantes et supplémentaires. Toute erreur de trame interrompt le test.
-
-Un LFSR de 16 bits, initialisé avec la graine fixe `0xACE1`, produit une suite reproductible. Les huit bits de poids faible fournissent chaque octet.
-
-Les 256 octets pseudo-aléatoires peuvent contenir des répétitions : ce test n’est pas un parcours exhaustif des 256 valeurs possibles.
+Les octets peuvent se répéter : ce test n’est pas un parcours exhaustif des 256 valeurs possibles.
 
 Une marge de repos est insérée entre les transmissions. Les trames consécutives sans marge et les horloges différentes restent à tester.
 
-## Paramétrage du lien UART
+### Paramétrage UART
 
 ```text
 Durée d’un bit = CLKS_PER_BIT × période de clk
@@ -361,9 +348,61 @@ Baudrate = fréquence de clk / CLKS_PER_BIT
 
 Les durées de bit doivent correspondre entre TX et RX. Avec une horloge commune, ils doivent utiliser le même `CLKS_PER_BIT`.
 
-Les tests individuels utilisent des paramètres différents car ils sont indépendants. Le bouclage utilise 8 pour les deux modules.
+## ALU paramétrable — `alu`
+
+Unité combinatoire avec deux opérandes de `WIDTH` bits, un sélecteur d’opération et un indicateur de résultat nul.
+
+| `op` | Opération |
+|---|---|
+| `"000"` | Addition modulo `2^WIDTH` |
+| `"001"` | Soustraction modulo `2^WIDTH` |
+| `"010"` | ET logique |
+| `"011"` | OU logique |
+| `"100"` | OU exclusif |
+| `"101"` | Décalage logique gauche de `a`, d’un bit |
+| `"110"` | Décalage logique droite de `a`, d’un bit |
+| `"111"` | Copie de `a` |
+
+Les calculs sont non signés. Les décalages insèrent un zéro et perdent le bit sortant. Ils n’utilisent pas `b`.
+
+`zero` vaut un lorsque le résultat est nul. Aucun indicateur de retenue ou de dépassement n’est fourni.
+
+Le processus combinatoire utilise `process(all)` et affecte le résultat dans toutes les branches pour éviter une mémorisation involontaire.
+
+Les valeurs non binaires du sélecteur sont traitées par une branche `others` produisant zéro. Ce comportement n’est pas couvert par les tests binaires exhaustifs.
+
+### Modèle de référence
+
+Le testbench calcule les résultats avec un modèle à base d’entiers :
+
+- Arithmétique modulo `2^WIDTH`.
+- Opérations logiques calculées bit par bit.
+- Décalages calculés par multiplication ou division par deux.
+
+Cette organisation évite de recopier simplement les expressions du RTL.
+
+### Tests exhaustifs sur les configurations choisies
+
+| Largeur | Opérations | Paires d’opérandes | Cas | Vérifications |
+|---|---:|---:|---:|---:|
+| 4 bits | 8 | 256 | 2 048 | 4 096 |
+| 1 bit | 8 | 4 | 32 | 64 |
+| **Total** | | | **2 080** | **4 160** |
+
+Chaque cas vérifie le résultat et l’indicateur `zero`.
+
+Les tests couvrent toutes les combinaisons binaires de ces deux largeurs, notamment les débordements, les soustractions modulo et les décalages avec perte de bit.
 
 ## Simulations individuelles
+
+Exemple pour l’ALU :
+
+```bash
+ghdl -a --std=08 rtl/alu.vhd tb/tb_alu.vhd
+ghdl -e --std=08 tb_alu
+ghdl -r --std=08 tb_alu --assert-level=error
+ghdl -r --std=08 tb_alu -gWIDTH_TB=1 --assert-level=error
+```
 
 Exemple pour le bouclage :
 
@@ -373,19 +412,7 @@ ghdl -e --std=08 tb_uart_loopback
 ghdl -r --std=08 tb_uart_loopback --assert-level=error --vcd=uart_loopback.vcd
 ```
 
-Message attendu :
-
-```text
-UART_LOOPBACK: all 256 pseudo-random bytes passed.
-```
-
-Pour un composant indépendant, analyser son fichier RTL et son testbench. Exemple :
-
-```bash
-ghdl -a --std=08 rtl/fifo_sync.vhd tb/tb_fifo_sync.vhd
-ghdl -e --std=08 tb_fifo_sync
-ghdl -r --std=08 tb_fifo_sync --assert-level=error --vcd=fifo_sync.vcd
-```
+Pour un autre composant indépendant, analyser son fichier RTL et son testbench, puis élaborer et exécuter l’entité de test correspondante.
 
 Pour `button_conditioner`, analyser d’abord `sync_2ff`, `debouncer` et `edge_detector`.
 
@@ -408,10 +435,12 @@ Pour `button_conditioner`, analyser d’abord `sync_2ff`, `debouncer` et `edge_d
 | `tb_uart_tx` | 586 ns |
 | `tb_uart_rx` | 2807 ns |
 | `tb_uart_loopback` | 258570 ns |
+| `tb_alu`, largeur 4 | 20480 ns |
+| `tb_alu`, largeur 1 | 320 ns |
 
-Ces durées correspondent au temps simulé, pas au temps d’exécution sur l’ordinateur.
+Ces valeurs correspondent au temps simulé, pas au temps d’exécution sur l’ordinateur.
 
-Pour visualiser une trace :
+Pour visualiser une trace générée :
 
 ```bash
 gtkwave uart_loopback.vcd
@@ -435,7 +464,9 @@ Cette configuration est indépendante de la compilation GHDL du script Python.
 
 ## Limites de vérification
 
-Le nombre de comparaisons et le nombre d’octets transmis sont des indicateurs distincts. Ils ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle.
+Les comparaisons, les cas testés et les octets transmis sont des indicateurs distincts. Ils ne constituent pas une mesure de couverture de code ou de couverture fonctionnelle.
+
+L’exhaustivité de l’ALU concerne uniquement les entrées binaires aux largeurs 1 et 4.
 
 Extensions prévues :
 
@@ -443,7 +474,7 @@ Extensions prévues :
 - FIFO de profondeur 1 et de profondeur non puissance de deux.
 - Reset du RX pendant une réception.
 - Trames UART consécutives, autres phases et écarts de baudrate.
-- Modèles de référence et vérification structurée.
+- Vérification structurée avec VUnit ou cocotb.
 
 Les simulations RTL ne reproduisent pas la métastabilité physique, les délais d’implémentation ou les conditions électriques d’une carte.
 
@@ -463,10 +494,9 @@ Le dépôt conserve les sources, les testbenches, les scripts et la documentatio
 
 ## Prochaines étapes
 
-- Vérification structurée avec VUnit ou cocotb
-- ALU paramétrable
-- Extension des tests aux cas limites et à plusieurs paramètres
-- Intégration FIFO et UART
-- Système pilotable par commandes UART
+- Structurer la vérification avec VUnit ou cocotb
+- Étendre les tests aux cas limites et à plusieurs paramètres
+- Intégrer FIFO, UART et ALU
+- Développer une interface de commandes et une banque de registres
 - Synthèse, contraintes et analyse de timing
 - Génération du bitstream et validation sur carte FPGA
