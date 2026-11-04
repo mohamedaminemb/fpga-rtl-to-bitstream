@@ -62,11 +62,11 @@ for module, testbench in tests:
         configuration = " ".join(options) or "default"
         print(f"  Configuration: {configuration}", flush=True)
 
-    run_command([
-        "ghdl", "-r", "--std=08", testbench,
-        *options,
-        "--assert-level=error",
-    ])
+        run_command([
+            "ghdl", "-r", "--std=08", testbench,
+            *options,
+            "--assert-level=error",
+       ])
 
     print(f"PASS: {module}", flush=True)
 

@@ -1,4 +1,7 @@
 *.cf 
 *.vcd 
 *.o
+.venv/
+vunit_out/
+__pycache__/
 work-obj*.cf

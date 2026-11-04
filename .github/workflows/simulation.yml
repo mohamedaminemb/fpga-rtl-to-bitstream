@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
+    env:
+      VUNIT_SIMULATOR: ghdl
+
     steps:
       - name: Get repository sources
         uses: actions/checkout@v6
@@ -20,12 +23,21 @@ jobs:
       - name: Install simulation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ghdl python3
+          sudo apt-get install -y ghdl python3 python3-venv
+
+      - name: Prepare Python environment
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install -r requirements-dev.txt
 
       - name: Show tool versions
         run: |
           ghdl --version
-          python3 --version
+          .venv/bin/python --version
+          .venv/bin/python -m pip show vunit_hdl
 
-      - name: Run VHDL regression
-        run: python3 scripts/run_tests.py
+      - name: Run existing GHDL regression
+        run: .venv/bin/python scripts/run_tests.py
+
+      - name: Run VUnit ALU tests
+        run: .venv/bin/python scripts/run_vunit.py
