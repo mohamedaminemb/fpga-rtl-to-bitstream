@@ -10,7 +10,9 @@ Le dépôt rassemble les sources RTL, des testbenches auto-vérifiants, une rég
 
 - **15 modules RTL**
 - **16 testbenches dans la régression GHDL**, exécutés dans 17 configurations
-- **Un testbench VUnit supplémentaire** : 9 scénarios sur 2 largeurs, soit 18 tests
+- **2 testbenches VUnit**, totalisant 34 tests :
+  - 18 tests ALU sur les largeurs 1 et 4
+  - 16 tests FIFO sur les profondeurs 1, 3 et 4, selon les scénarios
 - **4 758 vérifications dans les tests de composants de la régression GHDL**
 - **256 octets pseudo-aléatoires vérifiés en bouclage UART**
 
@@ -25,7 +27,7 @@ La synthèse, l’analyse de timing, la génération du bitstream et la validati
 - VUnit 4.7.1
 - GTKWave, facultatif, pour examiner les chronogrammes
 
-L’environnement testé utilise Ubuntu 24.04 LTS et GHDL 4.1.0.
+L’environnement de développement utilise Ubuntu 24.04 LTS et GHDL 4.1.0.
 
 ### Installer les dépendances Python
 
@@ -89,19 +91,18 @@ fpga-rtl-to-bitstream/
 │   ├── tb_uart_loopback.vhd
 │   ├── tb_alu.vhd
 │   └── vunit/
-│       └── tb_alu_vunit.vhd
+│       ├── tb_alu_vunit.vhd
+│       └── tb_fifo_sync_vunit.vhd
 └── scripts/
     ├── run_tests.py
     └── run_vunit.py
 ```
 
-Le bouclage utilise directement les modules UART dans son testbench. Il n’existe pas de module `rtl/uart_loopback.vhd`.
+Le bouclage UART instancie directement le TX et le RX dans son testbench. Il n’existe pas de module `rtl/uart_loopback.vhd`.
 
 ## Exécuter les tests
 
-### Régression GHDL existante
-
-Depuis la racine du dépôt :
+### Régression GHDL
 
 ```bash
 .venv/bin/python scripts/run_tests.py
@@ -115,7 +116,7 @@ All 16 testbenches passed.
 
 Le script analyse les sources, élabore les testbenches et lance les simulations avec `--assert-level=error`.
 
-- `source_overrides` définit les sources particulières du bouclage.
+- `source_overrides` définit les sources particulières du bouclage UART.
 - `simulation_options` définit les configurations supplémentaires.
 - L’ALU est exécutée sur 4 bits puis sur 1 bit.
 - Le script s’arrête au premier échec.
@@ -128,16 +129,29 @@ Lister les tests :
 .venv/bin/python scripts/run_vunit.py --list
 ```
 
-Exécuter les 18 tests :
+Exécuter les 34 tests :
 
 ```bash
 .venv/bin/python scripts/run_vunit.py
 ```
 
-Exécuter un seul test :
+Exécuter uniquement les tests FIFO :
 
 ```bash
-.venv/bin/python scripts/run_vunit.py "lib.tb_alu_vunit.width_4.subtraction_wrap"
+.venv/bin/python scripts/run_vunit.py 'lib.tb_fifo_sync_vunit.*'
+```
+
+Exécuter uniquement les tests ALU :
+
+```bash
+.venv/bin/python scripts/run_vunit.py 'lib.tb_alu_vunit.*'
+```
+
+Exécuter un scénario précis :
+
+```bash
+.venv/bin/python scripts/run_vunit.py \
+  'lib.tb_fifo_sync_vunit.depth_3.wraparound_with_remaining_data'
 ```
 
 Après activation de l’environnement, les mêmes commandes peuvent utiliser `python` :
@@ -161,12 +175,12 @@ Un code `0` indique une réussite. Un code non nul indique un échec.
 
 ## Intégration continue
 
-Le workflow **VHDL Simulation** est configuré pour exécuter les deux suites :
+Le workflow **VHDL Simulation** exécute :
 
-1. Régression GHDL existante.
-2. Tests VUnit de l’ALU.
+1. La régression GHDL existante.
+2. Les tests VUnit de l’ALU et de la FIFO.
 
-Il se déclenche à chaque push, lors des événements de pull request couverts par son déclencheur et manuellement avec **Run workflow**.
+Il est configuré pour les événements `push`, `pull_request` et le lancement manuel avec **Run workflow**.
 
 Sur Ubuntu 24.04, il récupère le dépôt, installe GHDL, crée un environnement Python et installe les dépendances depuis `requirements-dev.txt`.
 
@@ -174,11 +188,13 @@ Sur Ubuntu 24.04, il récupère le dépôt, installe GHDL, crée un environnemen
 
 Le workflow possède un accès en lecture au contenu du dépôt et une limite d’exécution de 10 minutes.
 
-Les résultats et journaux sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
+Les résultats sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
 
 ## Composants et vérification
 
-| Module | Fonction | Configuration testée | Vérifications GHDL |
+Les nombres ci-dessous concernent uniquement la régression GHDL historique.
+
+| Module | Fonction | Configuration testée | Vérifications |
 |---|---|---|---:|
 | `mux21` | Multiplexeur combinatoire | Entrées binaires | 8 |
 | `adder_sub` | Additionneur/soustracteur non signé | `N = 8` | 4 |
@@ -196,7 +212,7 @@ Les résultats et journaux sont disponibles dans l’onglet [Actions](https://gi
 | `uart_rx` | Récepteur UART 8N1 | `CLKS_PER_BIT = 8` | 26 |
 | `alu` | Unité arithmétique et logique | Largeurs 1 et 4 | 4 160 |
 
-Le test d’intégration UART ajoute 256 octets envoyés et comparés automatiquement. Ce nombre d’octets est distinct du nombre de vérifications du tableau.
+Le bouclage UART ajoute 256 octets envoyés et comparés automatiquement. Ce nombre d’octets est distinct des vérifications du tableau et des tests VUnit.
 
 ### Logique combinatoire et séquentielle
 
@@ -233,11 +249,11 @@ Les tests couvrent les préfixes incorrects, les suffixes utiles et l’effaceme
 
 `traffic_light_controller` réalise la rotation rouge, vert, orange avec des durées paramétrables. Deux instances vérifient les durées normales et le cas limite d’un cycle par état.
 
-### FIFO synchrone
+## FIFO synchrone
 
 `fifo_sync` utilise une mémoire, deux pointeurs circulaires et un compteur d’occupation.
 
-Les demandes sont acceptées selon l’occupation avant le front :
+Les demandes sont acceptées selon l’occupation avant le front montant :
 
 | État avant deux demandes simultanées | Écriture | Lecture |
 |---|---|---|
@@ -247,9 +263,46 @@ Les demandes sont acceptées selon l’occupation avant le front :
 
 La sortie de lecture est enregistrée et conserve sa valeur sans lecture acceptée.
 
-Le reset vide logiquement la FIFO sans effacer le tableau mémoire.
+Le reset remet les pointeurs, l’occupation et la sortie à zéro sans effacer le tableau mémoire.
 
-### UART TX/RX
+### Vérification FIFO avec VUnit
+
+La largeur des données est fixée à 8 bits dans les configurations actuelles.
+
+| Scénario | Profondeurs | Tests |
+|---|---|---:|
+| `reset_empty` | 1, 3, 4 | 3 |
+| `fill_reject_write_and_drain` | 1, 3, 4 | 3 |
+| `simultaneous_when_full` | 1, 3, 4 | 3 |
+| `simultaneous_when_empty` | 1, 3, 4 | 3 |
+| `simultaneous_when_partial` | 3, 4 | 2 |
+| `wraparound_with_remaining_data` | 3, 4 | 2 |
+| **Total** | | **16** |
+
+Les tests vérifient :
+
+- Le reset initial.
+- Le remplissage et le vidage.
+- Les drapeaux `empty` et `full`.
+- Le refus d’écriture à plein sans écrasement des données.
+- Le refus de lecture à vide avec conservation de la sortie.
+- Les demandes simultanées à vide, à plein et avec occupation intermédiaire.
+- L’ordre des données après retour des pointeurs.
+
+La profondeur 1 couvre le cas minimal. La profondeur 3 vérifie un retour circulaire pour une taille non puissance de deux.
+
+Les scénarios nécessitant une occupation intermédiaire sont configurés uniquement pour les profondeurs 3 et 4.
+
+Le retour des pointeurs est vérifié indirectement par les données et les drapeaux observables. Pour `DEPTH = 3` :
+
+```text
+Écrire 1, 2, 3 → [1, 2, 3]
+Lire 1 puis 2  → [3]
+Écrire 4 et 5  → [3, 4, 5]
+Lire           → 3, 4, 5
+```
+
+## UART TX/RX
 
 Le format utilisé est 8N1 : start bas, huit bits LSB d’abord, stop haut.
 
@@ -259,7 +312,7 @@ Le RX synchronise son entrée et échantillonne près du milieu des bits. Il exi
 
 Un stop correct produit `valid`. Un stop incorrect produit `frame_error` sans modifier le dernier octet valide.
 
-Un test de récupération a révélé une fausse détection de start après erreur. L’état `WAIT_IDLE` corrige ce comportement en attendant le retour au niveau haut.
+Après une erreur de trame, l’état `WAIT_IDLE` attend le retour de la ligne au niveau haut avant une nouvelle réception.
 
 ### Bouclage UART
 
@@ -275,7 +328,7 @@ Le moniteur compare les octets reçus et contrôle les événements de réceptio
 
 Les valeurs peuvent se répéter. Une marge de repos est insérée entre les trames.
 
-## ALU et tests structurés
+## ALU
 
 L’ALU est combinatoire, paramétrable en largeur et non signée.
 
@@ -305,7 +358,7 @@ Chaque cas vérifie le résultat et `zero`.
 
 ### Testbench VUnit
 
-`tb/vunit/tb_alu_vunit.vhd` propose neuf scénarios nommés :
+`tb/vunit/tb_alu_vunit.vhd` propose neuf scénarios :
 
 - `addition`
 - `subtraction_wrap`
@@ -319,9 +372,32 @@ Chaque cas vérifie le résultat et `zero`.
 
 Chaque scénario s’exécute sur les largeurs 1 et 4, soit 18 tests, avec deux comparaisons par test.
 
-Ces scénarios dirigés complètent le testbench exhaustif ; ils ne le remplacent pas.
+Ces scénarios dirigés complètent le testbench exhaustif.
 
-La détection d’échec a été vérifiée en modifiant temporairement un résultat attendu. Les deux configurations concernées ont échoué, puis les 18 tests ont réussi après restauration.
+La détection d’échec a été vérifiée en modifiant temporairement un résultat attendu. Les deux configurations concernées ont échoué, puis les tests ont réussi après restauration.
+
+## Organisation des tests VUnit
+
+```text
+run_vunit.py
+    │
+    ├── Enregistrement des sources
+    ├── Définition des configurations
+    └── Compilation et simulations avec GHDL
+                │
+                ▼
+         Testbench VUnit
+                │
+                ├── Application des entrées au RTL
+                ├── Attente de la mise à jour des sorties
+                └── Comparaisons avec check_equal
+```
+
+Les paramètres Python sont transmis aux generics du testbench, puis aux generics du RTL.
+
+Pour la FIFO, les entrées sont préparées au front descendant. Les opérations sont capturées au front montant, puis les sorties sont vérifiées après une attente de simulation de 1 ns.
+
+Cette attente appartient uniquement au testbench.
 
 ## Simulations individuelles
 
@@ -349,7 +425,7 @@ Après génération d’une trace :
 gtkwave uart_loopback.vcd
 ```
 
-Les testbenches VUnit sont lancés avec `run_vunit.py`, qui gère leurs bibliothèques et leur configuration.
+Les testbenches VUnit sont lancés avec `run_vunit.py`, qui gère leurs bibliothèques et leurs configurations.
 
 ## Configuration de l’éditeur
 
@@ -363,13 +439,16 @@ Les vérifications, les scénarios et les octets transmis sont des indicateurs d
 
 L’exhaustivité de l’ALU concerne uniquement les entrées binaires aux largeurs 1 et 4.
 
+Les scénarios FIFO VUnit sont dirigés et utilisent une largeur de 8 bits. Ils ne couvrent pas toutes les séquences possibles ni tous les paramètres.
+
 Extensions prévues :
 
-- Plusieurs paramètres et cas limites des autres composants.
-- FIFO de profondeur 1 et de profondeur non puissance de deux.
+- Reset de la FIFO pendant une activité.
+- Séquences FIFO plus longues avec modèle de référence.
+- Autres largeurs de données pour la FIFO.
 - Reset du RX pendant une réception.
 - Trames UART consécutives et écarts de baudrate.
-- Migration progressive d’autres testbenches vers VUnit.
+- Extension progressive de VUnit aux autres composants.
 
 Les simulations RTL ne reproduisent pas la métastabilité physique, les délais d’implémentation ou les conditions électriques d’une carte.
 
@@ -394,9 +473,9 @@ Les journaux VUnit sont disponibles localement dans `vunit_out/test_output/`.
 
 ## Prochaines étapes
 
-- Étendre la vérification structurée aux autres composants
-- Produire et conserver des rapports de régression
-- Intégrer FIFO, UART et ALU
-- Développer une interface de commandes et une banque de registres
-- Synthèse, contraintes et analyse de timing
-- Génération du bitstream et validation sur carte FPGA
+- Étendre la vérification structurée aux autres composants.
+- Produire et conserver des rapports de régression.
+- Intégrer FIFO, UART et ALU.
+- Développer une interface de commandes et une banque de registres.
+- Réaliser la synthèse, les contraintes et l’analyse de timing.
+- Générer le bitstream et valider sur carte FPGA.

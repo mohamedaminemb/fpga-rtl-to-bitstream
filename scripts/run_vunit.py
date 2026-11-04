@@ -13,15 +13,48 @@ vu.add_vhdl_builtins()
 
 lib = vu.add_library("lib")
 
+# Sources ALU.
 lib.add_source_file(str(ROOT / "rtl" / "alu.vhd"))
-lib.add_source_file(str(ROOT / "tb" / "vunit" / "tb_alu_vunit.vhd"))
+lib.add_source_file(
+    str(ROOT / "tb" / "vunit" / "tb_alu_vunit.vhd")
+)
 
-tb = lib.test_bench("tb_alu_vunit")
+# Sources FIFO.
+lib.add_source_file(str(ROOT / "rtl" / "fifo_sync.vhd"))
+lib.add_source_file(
+    str(ROOT / "tb" / "vunit" / "tb_fifo_sync_vunit.vhd")
+)
+
+# ALU : chaque scénario est exécuté sur deux largeurs.
+alu_tb = lib.test_bench("tb_alu_vunit")
 
 for width in (1, 4):
-    tb.add_config(
+    alu_tb.add_config(
         name=f"width_{width}",
         generics={"WIDTH_TB": width},
     )
+
+# FIFO : adapter les profondeurs au scénario.
+fifo_tb = lib.test_bench("tb_fifo_sync_vunit")
+
+partial_depth_tests = {
+    "simultaneous_when_partial",
+    "wraparound_with_remaining_data",
+}
+
+for test in fifo_tb.get_tests():
+    if test.name in partial_depth_tests:
+        depths = (3, 4)
+    else:
+        depths = (1, 3, 4)
+
+    for depth in depths:
+        test.add_config(
+            name=f"depth_{depth}",
+            generics={
+                "WIDTH_TB": 8,
+                "DEPTH_TB": depth,
+            },
+        )
 
 vu.main()

@@ -39,5 +39,5 @@ jobs:
       - name: Run existing GHDL regression
         run: .venv/bin/python scripts/run_tests.py
 
-      - name: Run VUnit ALU tests
+      - name: Run VUnit tests
         run: .venv/bin/python scripts/run_vunit.py
