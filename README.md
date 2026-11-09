@@ -10,9 +10,10 @@ Le dépôt rassemble les sources RTL, des testbenches auto-vérifiants, une rég
 
 - **16 modules RTL**, dont un module d’intégration UART avec FIFO
 - **17 testbenches dans la régression GHDL**, exécutés dans 18 configurations
-- **2 testbenches VUnit**, totalisant 34 tests :
+- **3 testbenches VUnit**, totalisant 42 tests :
   - 18 tests ALU sur les largeurs 1 et 4
   - 16 tests FIFO sur les profondeurs 1, 3 et 4, selon les scénarios
+  - 8 tests d’intégration UART avec FIFO : écho, trafic consécutif, débordement et récupération après reset
 - **4 758 vérifications dans les tests de composants de la régression GHDL**
 - **256 octets pseudo-aléatoires vérifiés en bouclage UART**
 - **4 octets consécutifs vérifiés dans le système d’écho UART avec FIFO**
@@ -95,7 +96,8 @@ fpga-rtl-to-bitstream/
 │   ├── tb_alu.vhd
 │   └── vunit/
 │       ├── tb_alu_vunit.vhd
-│       └── tb_fifo_sync_vunit.vhd
+│       ├── tb_fifo_sync_vunit.vhd
+│       └── tb_uart_echo_vunit.vhd
 └── scripts/
     ├── run_tests.py
     └── run_vunit.py
@@ -132,7 +134,7 @@ Lister les tests :
 .venv/bin/python scripts/run_vunit.py --list
 ```
 
-Exécuter les 34 tests :
+Exécuter les 42 tests :
 
 ```bash
 .venv/bin/python scripts/run_vunit.py
@@ -148,6 +150,12 @@ Exécuter uniquement les tests ALU :
 
 ```bash
 .venv/bin/python scripts/run_vunit.py 'lib.tb_alu_vunit.*'
+```
+
+Exécuter uniquement les tests d’écho UART :
+
+```bash
+.venv/bin/python scripts/run_vunit.py 'lib.tb_uart_echo_vunit.*'
 ```
 
 Exécuter un scénario précis :
@@ -180,7 +188,7 @@ Le fichier `reports/vunit_results.xml` contient le bilan de la suite, les noms d
 
 Le champ `time` d’un test représente sa durée d’exécution sur l’ordinateur, en secondes. Les instants exprimés en nanosecondes dans le journal correspondent au temps simulé.
 
-Le rapport concerne uniquement les 34 tests VUnit ; il n’inclut pas les testbenches lancés par `run_tests.py` et ne mesure pas la couverture du RTL.
+Le rapport concerne uniquement les 42 tests VUnit ; il n’inclut pas les testbenches lancés par `run_tests.py` et ne mesure pas la couverture du RTL.
 
 Le dossier `reports/` est généré localement et exclu de Git.
 
@@ -199,7 +207,7 @@ Un code `0` indique une réussite. Un code non nul indique un échec.
 Le workflow **VHDL Simulation** exécute :
 
 1. La régression GHDL existante.
-2. Les tests VUnit de l’ALU et de la FIFO.
+2. Les tests VUnit de l’ALU, de la FIFO et du système d’écho UART.
 
 Il est configuré pour les événements `push`, `pull_request` et le lancement manuel avec **Run workflow**.
 
@@ -217,7 +225,7 @@ L’étape de dépôt utilise `if: always()` pour tenter de conserver le rapport
 
 Pour télécharger le rapport, ouvrir une exécution du workflow, sélectionner sa page **Summary**, puis télécharger `vunit-test-report` dans la section **Artifacts**.
 
-La génération du rapport a été vérifiée avec 34 tests, sans échec ni test ignoré. Le téléchargement de l’artifact a également été validé sur GitHub Actions.
+Le rapport local a été actualisé après la réussite des 42 tests VUnit. Le téléchargement des rapports a été validé lors d’une précédente exécution GitHub Actions ; la nouvelle suite doit également être validée après son push.
 
 
 ## Composants et vérification
@@ -404,6 +412,28 @@ Un délai maximal empêche le test de rester bloqué si un écho manque. La simu
 
 Ce test couvre une courte séquence nominale. Il ne valide pas encore la saturation de la FIFO, l’activation de `overflow`, les resets pendant le trafic ou un flux continu de durée arbitraire. Le contrôleur ajoute des cycles entre émissions ; une FIFO finie ne garantit donc pas l’absence de perte sous un trafic soutenu.
 
+### Vérification de l’écho avec VUnit
+
+`tb/vunit/tb_uart_echo_vunit.vhd` ajoute quatre scénarios indépendants. Les trames sont générées sur `rx` et les échos sont vérifiés directement sur `tx`, sans réutiliser le RX du projet comme décodeur de référence.
+
+| Scénario | Profondeurs FIFO | Tests |
+|---|---|---:|
+| `single_byte` | 1, 3, 4 | 3 |
+| `consecutive_bytes` | 1, 3, 4 | 3 |
+| `overflow_sticky` | 1 | 1 |
+| `reset_recovery` | 1 | 1 |
+| **Total** | | **8** |
+
+Les scénarios nominaux vérifient l’octet `0xA6`, puis une séquence de quatre octets `0xA6`, `0x00`, `0xFF`, `0x3C`. Le moniteur contrôle le start, les données et le stop, puis surveille l’absence de trame supplémentaire pendant 800 ns. Le processus principal vérifie également l’absence de débordement et impose une durée maximale d’attente.
+
+`overflow_sticky` envoie des trames `0x55` consécutives jusqu’à observer un débordement, avec une limite de 128 octets. Après l’arrêt du trafic et une attente permettant de terminer les émissions, le test vérifie que `overflow` reste actif et que `tx` est au repos.
+
+Le débit UART est identique à l’entrée et à la sortie pendant une trame. Les cycles supplémentaires du contrôleur entre émissions réduisent toutefois le débit moyen de sortie, ce qui permet de provoquer une saturation sous un trafic soutenu.
+
+`reset_recovery` provoque un débordement, arrête le trafic, puis vérifie que l’indicateur ne s’efface pas avant le front montant de reset et s’efface après ce front. Un nouvel écho de `0xA6` vérifie la reprise des échanges.
+
+Les scénarios de saturation ne comparent pas les données renvoyées pendant le débordement. La récupération est testée après l’arrêt du trafic ; l’interruption d’une trame en cours par reset reste à vérifier. Un watchdog de 200 us limite la durée de chaque simulation de ce testbench.
+
 ## ALU
 
 L’ALU est combinatoire, paramétrable en largeur et non signée.
@@ -532,7 +562,8 @@ Extensions prévues :
 - Autres largeurs de données pour la FIFO.
 - Reset du RX pendant une réception.
 - Séquences UART plus longues et écarts de baudrate.
-- Saturation de la FIFO de `uart_echo`, mémorisation du débordement et reset pendant une activité.
+- Reset de `uart_echo` pendant une réception ou une émission.
+- Vérification détaillée des octets conservés et refusés pendant une saturation.
 - Extension progressive de VUnit aux autres composants.
 
 Les simulations RTL ne reproduisent pas la métastabilité physique, les délais d’implémentation ou les conditions électriques d’une carte.
@@ -559,9 +590,10 @@ Les journaux VUnit sont disponibles localement dans `vunit_out/test_output/`.
 
 ## Prochaines étapes
 
-- Étendre la vérification structurée aux autres composants.
-- Étendre la vérification de l’écho UART avec FIFO.
-- Ajouter le décodage des commandes et intégrer l’ALU au chemin UART.
-- Développer une interface de commandes et une banque de registres.
-- Réaliser la synthèse, les contraintes et l’analyse de timing.
-- Générer le bitstream et valider sur carte FPGA.
+- Définir un protocole UART pour transmettre une opération et ses opérandes.
+- Développer et vérifier le décodeur de commandes.
+- Connecter le décodeur à l’ALU et renvoyer le résultat par UART.
+- Vérifier le système complet avec des commandes valides, invalides et consécutives.
+- Choisir une cible FPGA et réaliser la synthèse.
+- Ajouter les contraintes d’horloge et analyser le timing.
+- Générer le bitstream et, si une carte est disponible, valider les échanges matériels.

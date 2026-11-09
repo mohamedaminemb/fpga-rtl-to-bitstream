@@ -56,5 +56,28 @@ for test in fifo_tb.get_tests():
                 "DEPTH_TB": depth,
             },
         )
+        
+for module in ("uart_rx", "uart_tx", "uart_echo"):
+    lib.add_source_file(str(ROOT / "rtl" / f"{module}.vhd"))
+
+lib.add_source_file(
+    str(ROOT / "tb" / "vunit" / "tb_uart_echo_vunit.vhd")
+)
+
+echo_tb = lib.test_bench("tb_uart_echo_vunit")
+
+
+
+for test in echo_tb.get_tests():
+    if test.name in ("overflow_sticky", "reset_recovery"):
+        depths = (1,)
+    else:
+        depths = (1, 3, 4)
+
+    for depth in depths:
+        test.add_config(
+            name=f"depth_{depth}",
+            generics={"FIFO_DEPTH_TB": depth},
+        )
 
 vu.main()
