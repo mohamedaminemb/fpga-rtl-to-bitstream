@@ -25,6 +25,7 @@ tests = [
     ("uart_rx", "tb_uart_rx"),
     ("uart_loopback", "tb_uart_loopback"),
     ("alu", "tb_alu"),
+    ("uart_echo", "tb_uart_echo"),
 ]
 
 source_overrides = {
@@ -32,6 +33,12 @@ source_overrides = {
         "rtl/uart_tx.vhd",
         "rtl/uart_rx.vhd",
     ],
+    "uart_echo": [
+    "rtl/uart_rx.vhd",
+    "rtl/fifo_sync.vhd",
+    "rtl/uart_tx.vhd",
+    "rtl/uart_echo.vhd",
+],
 }
 simulation_options = {
     "alu": [

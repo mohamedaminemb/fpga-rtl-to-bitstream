@@ -8,13 +8,14 @@ Le dépôt rassemble les sources RTL, des testbenches auto-vérifiants, une rég
 
 ## État actuel
 
-- **15 modules RTL**
-- **16 testbenches dans la régression GHDL**, exécutés dans 17 configurations
+- **16 modules RTL**, dont un module d’intégration UART avec FIFO
+- **17 testbenches dans la régression GHDL**, exécutés dans 18 configurations
 - **2 testbenches VUnit**, totalisant 34 tests :
   - 18 tests ALU sur les largeurs 1 et 4
   - 16 tests FIFO sur les profondeurs 1, 3 et 4, selon les scénarios
 - **4 758 vérifications dans les tests de composants de la régression GHDL**
 - **256 octets pseudo-aléatoires vérifiés en bouclage UART**
+- **4 octets consécutifs vérifiés dans le système d’écho UART avec FIFO**
 
 Les deux suites ont réussi localement. Le badge indique le résultat du workflow publié sur la branche `main`.
 
@@ -72,6 +73,7 @@ fpga-rtl-to-bitstream/
 │   ├── fifo_sync.vhd
 │   ├── uart_tx.vhd
 │   ├── uart_rx.vhd
+│   ├── uart_echo.vhd
 │   └── alu.vhd
 ├── tb/
 │   ├── tb_mux21.vhd
@@ -89,6 +91,7 @@ fpga-rtl-to-bitstream/
 │   ├── tb_uart_tx.vhd
 │   ├── tb_uart_rx.vhd
 │   ├── tb_uart_loopback.vhd
+│   ├── tb_uart_echo.vhd
 │   ├── tb_alu.vhd
 │   └── vunit/
 │       ├── tb_alu_vunit.vhd
@@ -111,12 +114,12 @@ Le bouclage UART instancie directement le TX et le RX dans son testbench. Il n�
 Message final attendu :
 
 ```text
-All 16 testbenches passed.
+All 17 testbenches passed.
 ```
 
 Le script analyse les sources, élabore les testbenches et lance les simulations avec `--assert-level=error`.
 
-- `source_overrides` définit les sources particulières du bouclage UART.
+- `source_overrides` définit les dépendances du bouclage UART et du système `uart_echo`.
 - `simulation_options` définit les configurations supplémentaires.
 - L’ALU est exécutée sur 4 bits puis sur 1 bit.
 - Le script s’arrête au premier échec.
@@ -214,7 +217,7 @@ L’étape de dépôt utilise `if: always()` pour tenter de conserver le rapport
 
 Pour télécharger le rapport, ouvrir une exécution du workflow, sélectionner sa page **Summary**, puis télécharger `vunit-test-report` dans la section **Artifacts**.
 
-La génération locale du rapport a été vérifiée avec 34 tests, sans échec ni test ignoré. La disponibilité de l’artifact sur GitHub doit être vérifiée après publication du workflow.
+La génération du rapport a été vérifiée avec 34 tests, sans échec ni test ignoré. Le téléchargement de l’artifact a également été validé sur GitHub Actions.
 
 
 ## Composants et vérification
@@ -239,7 +242,7 @@ Les nombres ci-dessous concernent uniquement la régression GHDL historique.
 | `uart_rx` | Récepteur UART 8N1 | `CLKS_PER_BIT = 8` | 26 |
 | `alu` | Unité arithmétique et logique | Largeurs 1 et 4 | 4 160 |
 
-Le bouclage UART ajoute 256 octets envoyés et comparés automatiquement. Ce nombre d’octets est distinct des vérifications du tableau et des tests VUnit.
+Les deux tests d’intégration ajoutent le bouclage UART de 256 octets et l’écho UART avec FIFO de 4 octets consécutifs. Ces nombres d’octets sont distincts des vérifications de composants du tableau et des tests VUnit.
 
 ### Logique combinatoire et séquentielle
 
@@ -355,6 +358,52 @@ Le moniteur compare les octets reçus et contrôle les événements de réceptio
 
 Les valeurs peuvent se répéter. Une marge de repos est insérée entre les trames.
 
+## Écho UART avec FIFO
+
+`uart_echo` assemble les modules `uart_rx`, `fifo_sync` et `uart_tx` pour renvoyer les octets reçus sans les modifier.
+
+```text
+Entrée rx → UART RX → FIFO 8 bits → UART TX → Sortie tx
+                         ↑             ↑
+                         └── Contrôleur┘
+```
+
+Les paramètres `CLKS_PER_BIT` et `FIFO_DEPTH` règlent respectivement la durée d’un bit UART et la capacité de stockage en octets.
+
+L’écriture dans la FIFO est demandée lorsqu’un octet valide est disponible et que la FIFO n’est pas pleine.
+
+Le contrôleur utilise quatre états :
+
+| État | Fonction |
+|---|---|
+| `IDLE` | Attendre une FIFO non vide et un TX disponible |
+| `LOAD` | Demander une lecture FIFO pendant un cycle |
+| `SEND` | Demander l’émission de la donnée lue pendant un cycle |
+| `WAIT_TX` | Attendre la fin de transmission avant de traiter la donnée suivante |
+
+La lecture FIFO étant enregistrée, la demande d’émission intervient après la mise à jour de sa sortie.
+
+Si un octet valide arrive alors que la FIFO est pleine, cet octet est refusé et `overflow` est mémorisé à l’état haut jusqu’au reset. La décision utilise l’état de la FIFO avant le front, même si une lecture est acceptée au même front.
+
+La sortie `frame_error` du RX n’est pas exposée par cette première interface. Le RX ne produit pas `valid` pour une trame dont le stop est incorrect.
+
+### Vérification de l’écho
+
+`tb_uart_echo.vhd` génère les trames d’entrée et vérifie la sortie série directement, bit par bit, dans un processus indépendant.
+
+Configuration testée :
+
+- Période d’horloge : 10 ns.
+- `CLKS_PER_BIT = 8`, soit 80 ns par bit.
+- `FIFO_DEPTH = 4`.
+- Quatre octets envoyés sans pause supplémentaire entre les trames : `0x00`, `0xFF`, `0xA6`, `0x3C`.
+
+Les vérifications portent sur le repos après reset, les bits de start, les données dans l’ordre attendu, les bits de stop et l’absence de débordement signalé. Une surveillance de 800 ns après le dernier stop détecte un éventuel départ de trame supplémentaire pendant cette fenêtre.
+
+Un délai maximal empêche le test de rester bloqué si un écho manque. La simulation validée se termine à 4 975 ns.
+
+Ce test couvre une courte séquence nominale. Il ne valide pas encore la saturation de la FIFO, l’activation de `overflow`, les resets pendant le trafic ou un flux continu de durée arbitraire. Le contrôleur ajoute des cycles entre émissions ; une FIFO finie ne garantit donc pas l’absence de perte sous un trafic soutenu.
+
 ## ALU
 
 L’ALU est combinatoire, paramétrable en largeur et non signée.
@@ -444,6 +493,14 @@ ghdl -e --std=08 tb_uart_loopback
 ghdl -r --std=08 tb_uart_loopback --assert-level=error --vcd=uart_loopback.vcd
 ```
 
+Exemple pour l’écho UART avec FIFO :
+
+```bash
+ghdl -a --std=08 rtl/uart_rx.vhd rtl/fifo_sync.vhd rtl/uart_tx.vhd rtl/uart_echo.vhd tb/tb_uart_echo.vhd
+ghdl -e --std=08 tb_uart_echo
+ghdl -r --std=08 tb_uart_echo --assert-level=error --vcd=uart_echo.vcd
+```
+
 Pour `button_conditioner`, analyser d’abord ses composants `sync_2ff`, `debouncer` et `edge_detector`.
 
 Après génération d’une trace :
@@ -474,7 +531,8 @@ Extensions prévues :
 - Séquences FIFO plus longues avec modèle de référence.
 - Autres largeurs de données pour la FIFO.
 - Reset du RX pendant une réception.
-- Trames UART consécutives et écarts de baudrate.
+- Séquences UART plus longues et écarts de baudrate.
+- Saturation de la FIFO de `uart_echo`, mémorisation du débordement et reset pendant une activité.
 - Extension progressive de VUnit aux autres composants.
 
 Les simulations RTL ne reproduisent pas la métastabilité physique, les délais d’implémentation ou les conditions électriques d’une carte.
@@ -502,7 +560,8 @@ Les journaux VUnit sont disponibles localement dans `vunit_out/test_output/`.
 ## Prochaines étapes
 
 - Étendre la vérification structurée aux autres composants.
-- Intégrer FIFO, UART et ALU.
+- Étendre la vérification de l’écho UART avec FIFO.
+- Ajouter le décodage des commandes et intégrer l’ALU au chemin UART.
 - Développer une interface de commandes et une banque de registres.
 - Réaliser la synthèse, les contraintes et l’analyse de timing.
 - Générer le bitstream et valider sur carte FPGA.
