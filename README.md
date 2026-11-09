@@ -163,6 +163,24 @@ python scripts/run_vunit.py
 
 L’activation doit être renouvelée dans chaque nouveau terminal.
 
+### Rapport de tests VUnit
+
+Générer un rapport XML compatible avec les outils xUnit/JUnit :
+
+```bash
+mkdir -p reports
+.venv/bin/python scripts/run_vunit.py \
+  --xunit-xml reports/vunit_results.xml
+```
+
+Le fichier `reports/vunit_results.xml` contient le bilan de la suite, les noms des tests, leurs configurations, leurs durées d’exécution et les sorties des simulations.
+
+Le champ `time` d’un test représente sa durée d’exécution sur l’ordinateur, en secondes. Les instants exprimés en nanosecondes dans le journal correspondent au temps simulé.
+
+Le rapport concerne uniquement les 34 tests VUnit ; il n’inclut pas les testbenches lancés par `run_tests.py` et ne mesure pas la couverture du RTL.
+
+Le dossier `reports/` est généré localement et exclu de Git.
+
 ### Codes de retour
 
 Après une commande :
@@ -189,6 +207,15 @@ Sur Ubuntu 24.04, il récupère le dépôt, installe GHDL, crée un environnemen
 Le workflow possède un accès en lecture au contenu du dépôt et une limite d’exécution de 10 minutes.
 
 Les résultats sont disponibles dans l’onglet [Actions](https://github.com/mohamedaminemb/fpga-rtl-to-bitstream/actions/workflows/simulation.yml).
+
+Le workflow est configuré pour générer le rapport VUnit puis le conserver dans un artifact nommé `vunit-test-report` pendant 14 jours.
+
+L’étape de dépôt utilise `if: always()` pour tenter de conserver le rapport même si une étape précédente a échoué. Cela ne masque pas l’échec des tests. Si aucun XML n’a été généré, l’étape affiche un avertissement.
+
+Pour télécharger le rapport, ouvrir une exécution du workflow, sélectionner sa page **Summary**, puis télécharger `vunit-test-report` dans la section **Artifacts**.
+
+La génération locale du rapport a été vérifiée avec 34 tests, sans échec ni test ignoré. La disponibilité de l’artifact sur GitHub doit être vérifiée après publication du workflow.
+
 
 ## Composants et vérification
 
@@ -467,6 +494,7 @@ Les fichiers locaux générés sont exclus avec :
 .venv/
 __pycache__/
 vunit_out/
+reports/
 ```
 
 Les journaux VUnit sont disponibles localement dans `vunit_out/test_output/`.
@@ -474,7 +502,6 @@ Les journaux VUnit sont disponibles localement dans `vunit_out/test_output/`.
 ## Prochaines étapes
 
 - Étendre la vérification structurée aux autres composants.
-- Produire et conserver des rapports de régression.
 - Intégrer FIFO, UART et ALU.
 - Développer une interface de commandes et une banque de registres.
 - Réaliser la synthèse, les contraintes et l’analyse de timing.

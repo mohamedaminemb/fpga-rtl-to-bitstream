@@ -5,3 +5,4 @@
 vunit_out/
 __pycache__/
 work-obj*.cf
+reports/
